@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import logging
+import re
+import tempfile
 from pathlib import Path
 
 import requests
@@ -19,15 +21,25 @@ PWC_LINKS_URL = "https://paperswithcode.com/media/about/links-between-papers-and
 def download_pwc_links(dest: Path):
     """Download the PWC links dump (gzipped JSON)."""
     import gzip
+    import shutil
 
     logger.info(f"Downloading PWC links to {dest}...")
     dest.parent.mkdir(parents=True, exist_ok=True)
 
-    resp = requests.get(PWC_LINKS_URL, stream=True, timeout=60)
+    resp = requests.get(PWC_LINKS_URL, stream=True, timeout=120)
     resp.raise_for_status()
 
-    raw = gzip.decompress(resp.content)
-    data = json.loads(raw)
+    # Stream to temp file to avoid loading entire response into memory
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".gz") as tmp_gz:
+        for chunk in resp.iter_content(chunk_size=8192):
+            tmp_gz.write(chunk)
+        tmp_gz_path = tmp_gz.name
+
+    try:
+        with gzip.open(tmp_gz_path, "rt", encoding="utf-8") as f:
+            data = json.load(f)
+    finally:
+        Path(tmp_gz_path).unlink(missing_ok=True)
 
     # Build a lookup keyed by arxiv paper URL
     lookup: dict[str, dict] = {}
@@ -36,8 +48,7 @@ def download_pwc_links(dest: Path):
         # Extract arxiv ID from URL like https://arxiv.org/abs/2401.12345
         if "arxiv.org" in paper_url:
             aid = paper_url.rstrip("/").split("/")[-1]
-            if "v" in aid:
-                aid = aid.rsplit("v", 1)[0]
+            aid = re.sub(r'v\d+$', '', aid)
             if aid not in lookup:
                 lookup[aid] = {
                     "code_url": entry.get("repo_url"),

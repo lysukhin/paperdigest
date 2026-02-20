@@ -40,14 +40,6 @@ class Scores:
 
 
 @dataclass
-class ScoredPaper:
-    """A paper with its computed scores."""
-
-    paper: Paper
-    scores: Scores
-
-
-@dataclass
 class Summary:
     """LLM-generated structured summary."""
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 import time
 from datetime import datetime, timedelta, timezone
 
@@ -53,12 +54,11 @@ class ArxivCollector(BaseCollector):
                     if pub_date.tzinfo is None:
                         pub_date = pub_date.replace(tzinfo=timezone.utc)
                     if pub_date < cutoff:
-                        break
+                        continue
 
                     aid = result.entry_id.split("/")[-1]
                     # Strip version suffix (e.g. "2401.12345v2" -> "2401.12345")
-                    if "v" in aid:
-                        aid = aid.rsplit("v", 1)[0]
+                    aid = re.sub(r'v\d+$', '', aid)
 
                     if aid in all_papers:
                         continue

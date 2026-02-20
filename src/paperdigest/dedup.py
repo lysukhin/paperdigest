@@ -24,6 +24,10 @@ def titles_match(a: str, b: str, threshold: float = FUZZY_THRESHOLD) -> bool:
     nb = normalize_title(b)
     if na == nb:
         return True
+    # Early exit: if lengths differ too much, they can't match
+    max_len = max(len(na), len(nb))
+    if max_len > 0 and abs(len(na) - len(nb)) > (1 - threshold) * max_len:
+        return False
     return SequenceMatcher(None, na, nb).ratio() >= threshold
 
 
@@ -35,6 +39,10 @@ def dedup_papers(papers: list[Paper], db: Database) -> list[Paper]:
     new_papers = []
     seen_ids: set[str] = set()
     seen_titles: list[str] = []
+
+    # Load recent DB titles for fuzzy matching
+    recent_papers = db.get_all_papers()
+    db_titles = [p.title for p in recent_papers]
 
     for paper in papers:
         # 1. Exact arxiv_id match
@@ -57,23 +65,29 @@ def dedup_papers(papers: list[Paper], db: Database) -> list[Paper]:
         is_dup = False
         for seen_title in seen_titles:
             if titles_match(paper.title, seen_title):
-                logger.debug(f"Dedup fuzzy title match: {paper.title[:60]}")
+                logger.debug(f"Dedup fuzzy title match (batch): {paper.title[:60]}")
                 is_dup = True
                 break
         if is_dup:
             seen_ids.add(paper.arxiv_id)
             continue
 
-        # 4. Fuzzy title match against DB (check recent papers)
-        # Only check title-based dedup for papers without arxiv_id matches
-        # This is a lighter check - we don't scan the entire DB for fuzzy matches
+        # 4. Fuzzy title match against recent DB papers
+        for db_title in db_titles:
+            if titles_match(paper.title, db_title):
+                logger.debug(f"Dedup fuzzy title match (DB): {paper.title[:60]}")
+                is_dup = True
+                break
+        if is_dup:
+            seen_ids.add(paper.arxiv_id)
+            continue
 
         seen_ids.add(paper.arxiv_id)
         seen_titles.append(paper.title)
         new_papers.append(paper)
 
     logger.info(
-        f"Dedup: {len(papers)} input → {len(new_papers)} new "
+        f"Dedup: {len(papers)} input -> {len(new_papers)} new "
         f"({len(papers) - len(new_papers)} duplicates removed)"
     )
     return new_papers

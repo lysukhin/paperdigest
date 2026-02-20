@@ -1,6 +1,8 @@
 """Tests for the scoring module."""
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+
+import pytest
 
 from paperdigest.config import (
     Config,
@@ -12,6 +14,10 @@ from paperdigest.config import (
 )
 from paperdigest.models import Paper, Scores
 from paperdigest.scoring import compute_quality, compute_relevance, score_papers
+
+# Fixed reference time for deterministic tests — set to "now" at import time
+# so all tests within a single run share the same value
+REF_TIME = datetime.now(timezone.utc)
 
 
 def _make_config(**overrides) -> Config:
@@ -51,7 +57,7 @@ def _make_paper(
         title=title,
         abstract=abstract,
         authors=["Alice", "Bob"],
-        published=published or datetime.now(timezone.utc),
+        published=published or REF_TIME,
         citations=citations,
         max_hindex=max_hindex,
         venue=venue,
@@ -68,7 +74,7 @@ class TestRelevanceScoring:
             abstract="We propose a new approach.",
         )
         score = compute_relevance(paper, config.scoring, config.topic)
-        assert score >= 0.5  # primary_base
+        assert score == pytest.approx(0.5)  # primary_base only
 
     def test_no_keyword_hit(self):
         config = _make_config()
@@ -77,7 +83,7 @@ class TestRelevanceScoring:
             abstract="Biology stuff",
         )
         score = compute_relevance(paper, config.scoring, config.topic)
-        assert score == 0.0
+        assert score == pytest.approx(0.0)
 
     def test_secondary_keywords_add(self):
         config = _make_config()
@@ -86,8 +92,8 @@ class TestRelevanceScoring:
             abstract="We do end-to-end driving with scene understanding",
         )
         score = compute_relevance(paper, config.scoring, config.topic)
-        # primary (0.5) + 2 secondary (0.2)
-        assert score >= 0.7
+        # primary (0.5) + 2 secondary (0.1 each = 0.2)
+        assert score == pytest.approx(0.7)
 
     def test_benchmark_mentions(self):
         config = _make_config()
@@ -96,8 +102,8 @@ class TestRelevanceScoring:
             abstract="Evaluated on nuScenes and CARLA benchmarks",
         )
         score = compute_relevance(paper, config.scoring, config.topic)
-        # primary (0.5) + 2 benchmarks (0.2)
-        assert score >= 0.7
+        # primary (0.5) + 2 benchmarks (0.1 each = 0.2)
+        assert score == pytest.approx(0.7)
 
     def test_max_capped_at_one(self):
         config = _make_config()
@@ -117,6 +123,7 @@ class TestQualityScoring:
             max_hindex=60,
             venue="CVPR 2024",
             code_url="https://github.com/example/repo",
+            published=REF_TIME,
         )
         score = compute_quality(paper, config.scoring)
         assert score > 0.7
@@ -128,18 +135,18 @@ class TestQualityScoring:
             max_hindex=2,
             venue=None,
             code_url=None,
+            published=REF_TIME,
         )
         score = compute_quality(paper, config.scoring)
         assert score < 0.5
 
     def test_freshness_decay(self):
         config = _make_config()
-        from datetime import timedelta
 
-        fresh = _make_paper(published=datetime.now(timezone.utc))
+        fresh = _make_paper(published=REF_TIME)
         old = _make_paper(
             arxiv_id="2401.00002",
-            published=datetime.now(timezone.utc) - timedelta(days=25),
+            published=REF_TIME - timedelta(days=25),
         )
 
         fresh_score = compute_quality(fresh, config.scoring)
@@ -169,6 +176,8 @@ class TestRanking:
         )
         scored = score_papers([relevant, irrelevant], config)
         assert scored[0][0].arxiv_id == "2401.00001"
+        # Verify the relevant paper has a higher final score
+        assert scored[0][1].final > scored[1][1].final
 
     def test_higher_quality_breaks_tie(self):
         config = _make_config()
@@ -189,3 +198,6 @@ class TestRanking:
         )
         scored = score_papers([p1, p2], config)
         assert scored[0][0].arxiv_id == "2401.00001"
+        # Both have same relevance, quality breaks the tie
+        assert scored[0][1].relevance == pytest.approx(scored[1][1].relevance)
+        assert scored[0][1].quality > scored[1][1].quality

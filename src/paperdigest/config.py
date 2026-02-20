@@ -148,8 +148,8 @@ def _build_scoring(d: dict) -> ScoringConfig:
     qual = d.get("quality", {})
     return ScoringConfig(
         alpha=d.get("alpha", 0.65),
-        relevance=RelevanceWeights(**{k: v for k, v in rel.items()}),
-        quality=QualityWeights(**{k: v for k, v in qual.items()}),
+        relevance=RelevanceWeights(**rel),
+        quality=QualityWeights(**qual),
         venue_tiers=d.get("venue_tiers", {}),
     )
 
@@ -160,7 +160,7 @@ def _build_llm(d: dict) -> LLMConfig:
         enabled=d.get("enabled", False),
         model=d.get("model", "gpt-4o-mini"),
         base_url=d.get("base_url", "https://api.openai.com/v1"),
-        cost_control=CostControl(**{k: v for k, v in cc.items()}),
+        cost_control=CostControl(**cc),
     )
 
 
@@ -200,13 +200,23 @@ def load_config(path: str | Path) -> Config:
     db_raw = raw.get("database", {})
     pwc_raw = raw.get("pwc", {})
 
+    scoring = _build_scoring(raw.get("scoring", {}))
+
+    # Validate scoring config
+    if not 0.0 <= scoring.alpha <= 1.0:
+        raise ValueError(f"scoring.alpha must be in [0, 1], got {scoring.alpha}")
+    qw = scoring.quality
+    weight_sum = qw.w_venue + qw.w_author + qw.w_cite + qw.w_code + qw.w_fresh
+    if abs(weight_sum - 1.0) > 0.01:
+        raise ValueError(f"Quality weights must sum to 1.0, got {weight_sum:.4f}")
+
     return Config(
         topic=_build_topic(raw["topic"]),
         collection=CollectionConfig(
             lookback_days=coll.get("lookback_days", 7),
             max_results=coll.get("max_results", 200),
         ),
-        scoring=_build_scoring(raw.get("scoring", {})),
+        scoring=scoring,
         llm=_build_llm(raw.get("llm", {})),
         digest=DigestConfig(
             top_n=raw.get("digest", {}).get("top_n", 20),

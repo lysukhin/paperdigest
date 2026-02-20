@@ -58,7 +58,6 @@ CREATE TABLE IF NOT EXISTS llm_usage (
     created_at TEXT DEFAULT (datetime('now'))
 );
 
-CREATE INDEX IF NOT EXISTS idx_papers_arxiv ON papers(arxiv_id);
 CREATE INDEX IF NOT EXISTS idx_papers_doi ON papers(doi);
 CREATE INDEX IF NOT EXISTS idx_scores_final ON scores(final DESC);
 CREATE INDEX IF NOT EXISTS idx_llm_usage_date ON llm_usage(date);
@@ -74,8 +73,16 @@ class Database:
         self.conn.execute("PRAGMA journal_mode=WAL")
         self.conn.execute("PRAGMA foreign_keys=ON")
 
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+        return False
+
     def init_schema(self):
         self.conn.executescript(SCHEMA)
+        self.conn.execute("PRAGMA foreign_keys=ON")
         self.conn.commit()
 
     def close(self):

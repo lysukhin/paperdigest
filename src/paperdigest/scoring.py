@@ -1,9 +1,10 @@
-"""Paper scoring: relevance + quality → final score."""
+"""Paper scoring: relevance + quality -> final score."""
 
 from __future__ import annotations
 
 import logging
 import math
+import re
 from datetime import datetime, timezone
 
 from .config import Config, QualityWeights, RelevanceWeights, ScoringConfig
@@ -18,7 +19,7 @@ def _keyword_in_text(keyword: str, text: str) -> bool:
 
 
 def compute_relevance(paper: Paper, config: ScoringConfig, topic_cfg) -> float:
-    """Compute relevance score (0–1) based on keyword matching."""
+    """Compute relevance score (0-1) based on keyword matching."""
     rw: RelevanceWeights = config.relevance
     text = f"{paper.title} {paper.abstract}"
     score = 0.0
@@ -48,25 +49,21 @@ def compute_relevance(paper: Paper, config: ScoringConfig, topic_cfg) -> float:
 
 
 def _venue_tier_score(venue: str | None, venue_tiers: dict[str, list[str]]) -> float:
-    """Map venue to tier score."""
+    """Map venue to tier score using word-boundary matching for short names."""
     if not venue:
         return 0.2
 
-    venue_lower = venue.lower()
-    for v in venue_tiers.get("tier1", []):
-        if v.lower() in venue_lower:
-            return 1.0
-    for v in venue_tiers.get("tier2", []):
-        if v.lower() in venue_lower:
-            return 0.7
-    for v in venue_tiers.get("tier3", []):
-        if v.lower() in venue_lower:
-            return 0.4
+    for tier, tier_score in [("tier1", 1.0), ("tier2", 0.7), ("tier3", 0.4)]:
+        for v in venue_tiers.get(tier, []):
+            # Use word-boundary matching to avoid false positives
+            # (e.g. "IV" matching "driving")
+            if re.search(r'\b' + re.escape(v) + r'\b', venue, re.IGNORECASE):
+                return tier_score
     return 0.2
 
 
 def compute_quality(paper: Paper, config: ScoringConfig) -> float:
-    """Compute quality score (0–1) as weighted sum of signals."""
+    """Compute quality score (0-1) as weighted sum of signals."""
     qw: QualityWeights = config.quality
 
     venue_score = _venue_tier_score(paper.venue, config.venue_tiers)
@@ -75,7 +72,8 @@ def compute_quality(paper: Paper, config: ScoringConfig) -> float:
     code_score = 1.0 if paper.code_url else 0.0
 
     # Freshness: linearly decay over 30 days
-    age_days = (datetime.now(timezone.utc) - paper.published.replace(tzinfo=timezone.utc)).days
+    published = paper.published.astimezone(timezone.utc) if paper.published.tzinfo else paper.published.replace(tzinfo=timezone.utc)
+    age_days = (datetime.now(timezone.utc) - published).days
     fresh_score = max(0.0, 1.0 - age_days / 30.0)
 
     score = (

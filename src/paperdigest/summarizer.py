@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import uuid
 from datetime import datetime
 
@@ -83,8 +84,12 @@ class Summarizer:
                 f"({monthly_cost / cc.max_cost_per_month * 100:.0f}%)"
             )
 
-        # Check per-run budget
-        estimated_next = self._estimate_cost(500, 300)  # Rough estimate per paper
+        # Check per-run budget using adaptive estimate
+        if self.run_papers > 0:
+            avg_cost = self.run_cost / self.run_papers
+            estimated_next = avg_cost * 1.5  # safety margin
+        else:
+            estimated_next = self._estimate_cost(800, 500)  # conservative first estimate
         if self.run_cost + estimated_next > cc.max_cost_per_run:
             return False, f"Per-run budget would be exceeded (${self.run_cost:.4f} / ${cc.max_cost_per_run:.2f})"
 
@@ -120,14 +125,17 @@ class Summarizer:
                 self.run_output_tokens += output_t
                 self.run_cost += cost
 
+            # Guard against empty/null response
+            if not response.choices or response.choices[0].message.content is None:
+                logger.warning(f"Empty LLM response for {paper.arxiv_id}")
+                return None
+
             # Parse response
             content = response.choices[0].message.content.strip()
-            # Strip markdown fences if present
-            if content.startswith("```"):
-                content = content.split("\n", 1)[1]
-                if content.endswith("```"):
-                    content = content[:-3]
-                content = content.strip()
+            # Strip markdown fences if present (handles ```json, ``` with trailing whitespace, etc.)
+            content = re.sub(r'^```\w*\n?', '', content)
+            content = re.sub(r'\n?```\s*$', '', content)
+            content = content.strip()
 
             data = json.loads(content)
             self.run_papers += 1
