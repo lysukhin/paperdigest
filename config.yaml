@@ -1,0 +1,99 @@
+topic:
+  name: "VLM/VLA for Autonomous Driving"
+  primary_keywords:
+    - "vision language model autonomous driving"
+    - "VLM autonomous driving"
+    - "vision language action autonomous driving"
+    - "VLA autonomous driving"
+    - "multimodal large language model driving"
+  secondary_keywords:
+    - "end-to-end driving"
+    - "scene understanding driving"
+    - "planning prediction driving"
+    - "visual grounding driving"
+    - "language-guided navigation"
+  benchmarks:
+    - "nuScenes"
+    - "Waymo Open"
+    - "CARLA"
+    - "DriveLM"
+    - "OpenScene"
+    - "DriveVLM"
+  arxiv_categories:
+    - "cs.CV"
+    - "cs.AI"
+    - "cs.RO"
+    - "cs.LG"
+
+collection:
+  lookback_days: 7
+  max_results: 200
+
+scoring:
+  alpha: 0.65
+  relevance:
+    primary_base: 0.5
+    secondary_increment: 0.1
+    secondary_cap: 0.3
+    benchmark_increment: 0.1
+    benchmark_cap: 0.2
+  quality:
+    w_venue: 0.25
+    w_author: 0.20
+    w_cite: 0.20
+    w_code: 0.15
+    w_fresh: 0.20
+  venue_tiers:
+    tier1:
+      - "NeurIPS"
+      - "ICML"
+      - "ICLR"
+      - "CVPR"
+      - "ECCV"
+      - "ICCV"
+      - "AAAI"
+      - "IJCAI"
+      - "RSS"
+      - "CoRL"
+    tier2:
+      - "IROS"
+      - "ICRA"
+      - "WACV"
+      - "BMVC"
+      - "ACCV"
+      - "AISTATS"
+      - "UAI"
+    tier3:
+      - "IV"
+      - "ITSC"
+      - "T-ITS"
+      - "RA-L"
+      - "T-RO"
+
+digest:
+  top_n: 20
+  summarize_top_n: 15
+  output_dir: "data/digests"
+
+llm:
+  enabled: false
+  model: "gpt-4o-mini"
+  base_url: "https://api.openai.com/v1"
+  cost_control:
+    max_cost_per_run: 0.50
+    max_cost_per_month: 10.00
+    warn_at_percent: 80
+    input_cost_per_1k: 0.00015
+    output_cost_per_1k: 0.0006
+
+delivery:
+  markdown:
+    enabled: true
+  telegram:
+    enabled: false
+
+database:
+  path: "data/papers.db"
+
+pwc:
+  links_path: "data/pwc_links.json"
