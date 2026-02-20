@@ -1,0 +1,85 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Project Overview
+
+**paperdigest** — an automated research paper digest system that fetches papers from arXiv, enriches them with citation/code data (Semantic Scholar, Papers with Code), scores by relevance and quality, optionally generates LLM summaries, and delivers digests as Markdown files or Telegram messages. Currently configured for VLM/VLA for Autonomous Driving but works for any research topic via `config.yaml`.
+
+## Commands
+
+```bash
+# Install
+pip install -e .              # core only
+pip install -e ".[llm]"       # with LLM summarization
+pip install -e ".[dev]"       # with dev/test tools
+
+# Run tests
+python -m pytest tests/ -v
+
+# Run a single test file
+python -m pytest tests/test_scoring.py -v
+
+# Run a single test
+python -m pytest tests/test_scoring.py::test_primary_keyword_relevance -v
+
+# CLI (all commands accept --config <path>, default: config.yaml)
+python -m paperdigest init --skip-pwc     # create DB, optionally download PWC links
+python -m paperdigest run                  # full pipeline: fetch → enrich → score → digest
+python -m paperdigest fetch                # collect papers from arXiv
+python -m paperdigest enrich               # add Semantic Scholar + PWC data
+python -m paperdigest score                # compute scores
+python -m paperdigest digest --dry-run     # generate digest without delivering
+python -m paperdigest stats                # show DB and LLM usage statistics
+python -m paperdigest -v <subcommand>      # verbose/debug logging
+```
+
+## Architecture
+
+### Pipeline Flow
+```
+arXiv API → Dedup → SQLite → Semantic Scholar + PWC → Score → [LLM Summary] → Markdown / Telegram
+ (fetch)   (batch)  (store)       (enrich)           (score)   (optional)      (deliver)
+```
+
+### Package Layout (`src/paperdigest/`)
+
+- **cli.py** — argparse-based CLI with 7 subcommands, global `-v` flag
+- **config.py** — YAML loading into validated dataclasses; env vars for secrets (`LLM_API_KEY`, `SEMANTIC_SCHOLAR_API_KEY`, `TELEGRAM_*`)
+- **models.py** — core data models: `Paper`, `Scores`, `Summary`, `DigestEntry`, `Digest`
+- **db.py** — SQLite with WAL mode; 4 tables (`papers`, `scores`, `digests`, `llm_usage`); upsert patterns, cost tracking
+- **dedup.py** — 3-stage deduplication: exact arXiv ID → exact DOI → fuzzy title matching (SequenceMatcher, 0.85 threshold)
+- **scoring.py** — relevance score (keyword matching in title+abstract) + quality score (venue tier, h-index, citations, code, freshness) → weighted final score
+- **summarizer.py** — OpenAI-compatible LLM with structured JSON output; per-run ($0.50) and monthly ($10) cost caps with graceful degradation
+- **collectors/** — abstract `BaseCollector` interface; `ArxivCollector` with query building, rate limiting (3s delay, 3 retries)
+- **enrichment/** — `semantic_scholar.py` (citations, h-index, venue, OA PDF) and `pwc.py` (code links via local JSON dump)
+- **delivery/** — `markdown.py` (Jinja2 template at `templates/digest.md.j2`) and `telegram.py` (raw HTTP, 4096 char limit)
+
+### Key Design Decisions
+
+- **LLM is optional and off by default** — the system works at zero cost without it; papers still appear in digests without summaries
+- **Collector extensibility** — `BaseCollector` ABC allows adding new paper sources beyond arXiv
+- **Local PWC lookup** — downloads full JSON dump once (`init`), then does instant local lookups instead of per-paper API calls
+- **Scoring is configurable** — all weights, keyword lists, venue tiers, and the relevance/quality balance (`alpha`) are in `config.yaml`
+- **Individual API failures don't break the pipeline** — enrichment and summarization handle errors per-paper gracefully
+
+### Database
+
+SQLite at `data/papers.db`. Key tables:
+- `papers` — canonical record per paper, unique on `arxiv_id`, indexed on `doi`
+- `scores` — one row per paper, `final` score indexed DESC for efficient top-N queries
+- `llm_usage` — per-run cost tracking with `run_id` unique constraint
+
+### Test Structure
+
+29 tests across 3 files — all unit tests with no external API calls:
+- `test_config.py` — config loading, validation, defaults, error cases
+- `test_dedup.py` — title normalization, fuzzy matching, ID/DOI/title dedup
+- `test_scoring.py` — relevance/quality scoring, capping, freshness decay, ranking
+
+## Runtime Data
+
+`data/` directory (gitignored) contains:
+- `papers.db` — SQLite database
+- `digests/` — generated markdown digests (`digest_YYYY-MM-DD.md`)
+- `pwc_links.json` — Papers with Code lookup cache
