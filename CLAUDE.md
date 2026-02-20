@@ -21,7 +21,7 @@ python -m pytest tests/ -v
 python -m pytest tests/test_scoring.py -v
 
 # Run a single test
-python -m pytest tests/test_scoring.py::test_primary_keyword_relevance -v
+python -m pytest tests/test_scoring.py::TestRelevanceScoring::test_primary_keyword_hit -v
 
 # CLI (all commands accept --config <path>, default: config.yaml)
 python -m paperdigest init --skip-pwc     # create DB, optionally download PWC links
@@ -45,15 +45,15 @@ arXiv API → Dedup → SQLite → Semantic Scholar + PWC → Score → [LLM Sum
 ### Package Layout (`src/paperdigest/`)
 
 - **cli.py** — argparse-based CLI with 7 subcommands, global `-v` flag
-- **config.py** — YAML loading into validated dataclasses; env vars for secrets (`LLM_API_KEY`, `SEMANTIC_SCHOLAR_API_KEY`, `TELEGRAM_*`)
+- **config.py** — YAML loading into validated dataclasses; loads secrets from `.env` file (falls back to env vars: `LLM_API_KEY`, `SEMANTIC_SCHOLAR_API_KEY`, `TELEGRAM_*`)
 - **models.py** — core data models: `Paper`, `Scores`, `Summary`, `DigestEntry`, `Digest`
-- **db.py** — SQLite with WAL mode; 4 tables (`papers`, `scores`, `digests`, `llm_usage`); upsert patterns, cost tracking
-- **dedup.py** — 3-stage deduplication: exact arXiv ID → exact DOI → fuzzy title matching (SequenceMatcher, 0.85 threshold)
+- **db.py** — SQLite with WAL mode; context manager (`with Database(...) as db:`); 4 tables (`papers`, `scores`, `digests`, `llm_usage`); upsert patterns, cost tracking
+- **dedup.py** — 4-stage deduplication: exact arXiv ID → exact DOI → fuzzy title within batch → fuzzy title against DB (SequenceMatcher, 0.85 threshold)
 - **scoring.py** — relevance score (keyword matching in title+abstract) + quality score (venue tier, h-index, citations, code, freshness) → weighted final score
 - **summarizer.py** — OpenAI-compatible LLM with structured JSON output; per-run ($0.50) and monthly ($10) cost caps with graceful degradation
 - **collectors/** — abstract `BaseCollector` interface; `ArxivCollector` with query building, rate limiting (3s delay, 3 retries)
 - **enrichment/** — `semantic_scholar.py` (citations, h-index, venue, OA PDF) and `pwc.py` (code links via local JSON dump)
-- **delivery/** — `markdown.py` (Jinja2 template at `templates/digest.md.j2`) and `telegram.py` (raw HTTP, 4096 char limit)
+- **delivery/** — `markdown.py` (sandboxed Jinja2 template at `templates/digest.md.j2`) and `telegram.py` (raw HTTP, MarkdownV2, 4096 char limit)
 
 ### Key Design Decisions
 
@@ -72,10 +72,10 @@ SQLite at `data/papers.db`. Key tables:
 
 ### Test Structure
 
-29 tests across 3 files — all unit tests with no external API calls:
-- `test_config.py` — config loading, validation, defaults, error cases
-- `test_dedup.py` — title normalization, fuzzy matching, ID/DOI/title dedup
-- `test_scoring.py` — relevance/quality scoring, capping, freshness decay, ranking
+33 tests across 3 files — all unit tests with no external API calls:
+- `test_config.py` — config loading, validation, defaults, error cases, weight/alpha validation
+- `test_dedup.py` — title normalization, fuzzy matching, ID/DOI/title dedup (batch + DB)
+- `test_scoring.py` — relevance/quality scoring with `pytest.approx`, freshness decay, ranking
 
 ## Runtime Data
 
@@ -83,3 +83,16 @@ SQLite at `data/papers.db`. Key tables:
 - `papers.db` — SQLite database
 - `digests/` — generated markdown digests (`digest_YYYY-MM-DD.md`)
 - `pwc_links.json` — Papers with Code lookup cache
+
+## Secrets
+
+Copy `.env.example` to `.env` and fill in values. The `.env` file is loaded automatically from the same directory as `config.yaml`. Environment variables take precedence over `.env` values.
+
+## Code Conventions
+
+- `Database` is a context manager — always use `with Database(...) as db:`
+- Config validation enforces `alpha` in [0, 1] and quality weights summing to 1.0 — tests that override partial weights must provide all 5 weights
+- Telegram uses MarkdownV2 — escape user-controlled strings with `_escape_markdown()`
+- Scoring uses `paper.published.astimezone(timezone.utc)` for timezone-safe freshness
+- Tests use `tmp_path` fixture for temp files/DBs, never `tempfile.mktemp`
+- Tests use `pytest.approx()` for deterministic float assertions

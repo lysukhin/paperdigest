@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import yaml
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -173,6 +176,39 @@ def _build_delivery(d: dict) -> DeliveryConfig:
     )
 
 
+def _load_env_file(env_path: Path) -> None:
+    """Load variables from a .env file into os.environ.
+
+    Existing environment variables are NOT overwritten.
+    Supports KEY=VALUE, quoted values, comments, and blank lines.
+    """
+    if not env_path.is_file():
+        return
+
+    loaded = 0
+    for line in env_path.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if "=" not in line:
+            continue
+
+        key, _, value = line.partition("=")
+        key = key.strip()
+        value = value.strip()
+
+        # Strip matching quotes
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in ('"', "'"):
+            value = value[1:-1]
+
+        if key and key not in os.environ:
+            os.environ[key] = value
+            loaded += 1
+
+    if loaded:
+        logger.debug(f"Loaded {loaded} variable(s) from {env_path}")
+
+
 def load_config(path: str | Path) -> Config:
     """Load and validate configuration from a YAML file."""
     path = Path(path)
@@ -196,6 +232,10 @@ def load_config(path: str | Path) -> Config:
         raise ValueError("primary_keywords must not be empty")
 
     base_dir = path.parent.resolve()
+
+    # Load .env from the same directory as config.yaml
+    _load_env_file(base_dir / ".env")
+
     coll = raw.get("collection", {})
     db_raw = raw.get("database", {})
     pwc_raw = raw.get("pwc", {})
