@@ -44,8 +44,35 @@ def cmd_init(args):
     logger.info("Initialization complete")
 
 
+def _get_blog_collectors(config):
+    """Build blog collector instances based on config."""
+    collectors = []
+    blog_cfg = config.collection.blogs
+    if not blog_cfg.enabled:
+        return collectors
+
+    source_map = {}
+    if "nvidia" in blog_cfg.sources:
+        from .collectors.nvidia import NvidiaCollector
+        source_map["nvidia"] = NvidiaCollector
+    if "waymo" in blog_cfg.sources:
+        from .collectors.waymo import WaymoCollector
+        source_map["waymo"] = WaymoCollector
+    if "wayve" in blog_cfg.sources:
+        from .collectors.wayve import WayveCollector
+        source_map["wayve"] = WayveCollector
+
+    for name in blog_cfg.sources:
+        cls = source_map.get(name)
+        if cls:
+            collectors.append(cls(config))
+        else:
+            logger.warning(f"Unknown blog source: {name}")
+    return collectors
+
+
 def cmd_fetch(args):
-    """Collect papers from arXiv."""
+    """Collect papers from arXiv and configured blog sources."""
     config = get_config(args)
     with Database(config.db_path) as db:
         db.init_schema()
@@ -53,8 +80,18 @@ def cmd_fetch(args):
         from .collectors.arxiv import ArxivCollector
         from .dedup import dedup_papers
 
+        # arXiv
         collector = ArxivCollector(config)
         papers = collector.collect()
+
+        # Blog sources
+        for blog_collector in _get_blog_collectors(config):
+            try:
+                blog_papers = blog_collector.collect()
+                papers.extend(blog_papers)
+            except Exception:
+                logger.exception(f"Failed to collect from {blog_collector.source_name}")
+
         new_papers = dedup_papers(papers, db)
 
         for paper in new_papers:

@@ -22,9 +22,16 @@ class TopicConfig:
 
 
 @dataclass
+class BlogsConfig:
+    enabled: bool = False
+    sources: list[str] = field(default_factory=lambda: ["nvidia", "waymo", "wayve"])
+
+
+@dataclass
 class CollectionConfig:
     lookback_days: int = 7
     max_results: int = 200
+    blogs: BlogsConfig = field(default_factory=BlogsConfig)
 
 
 @dataclass
@@ -272,6 +279,10 @@ def load_config(path: str | Path) -> Config:
         collection=CollectionConfig(
             lookback_days=coll.get("lookback_days", 7),
             max_results=coll.get("max_results", 200),
+            blogs=BlogsConfig(
+                enabled=coll.get("blogs", {}).get("enabled", False),
+                sources=coll.get("blogs", {}).get("sources", ["nvidia", "waymo", "wayve"]),
+            ),
         ),
         scoring=scoring,
         llm=_build_llm(raw.get("llm", {})),

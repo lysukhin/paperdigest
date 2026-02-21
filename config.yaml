@@ -27,6 +27,12 @@ topic:
 collection:
   lookback_days: 7
   max_results: 200
+  blogs:
+    enabled: true
+    sources:
+      - nvidia
+      - waymo
+      # - wayve  # currently blocked by WAF (403)
 
 scoring:
   alpha: 0.65
