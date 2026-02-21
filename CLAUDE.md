@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**paperdigest** — an automated research paper digest system that fetches papers from arXiv, enriches them with citation/code data (Semantic Scholar, Papers with Code), scores by relevance and quality, optionally generates LLM summaries, and delivers digests as Markdown files or Telegram messages. Currently configured for VLM/VLA for Autonomous Driving but works for any research topic via `config.yaml`.
+**paperdigest** — an automated research paper digest system that fetches papers from arXiv, conference proceedings (DBLP), and lab blogs (NVIDIA, Waymo), enriches them with citation/code data (Semantic Scholar, Papers with Code), scores by relevance and quality, optionally generates LLM summaries (with full-text PDF support), and delivers digests as Markdown files, Telegram messages, or a web dashboard. Currently configured for VLM/VLA for Autonomous Driving but works for any research topic via `config.yaml`.
 
 ## Commands
 
@@ -12,6 +12,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 # Install
 pip install -e .              # core only
 pip install -e ".[llm]"       # with LLM summarization
+pip install -e ".[web]"       # with web dashboard
 pip install -e ".[dev]"       # with dev/test tools
 
 # Run tests
@@ -30,28 +31,37 @@ python -m paperdigest fetch                # collect papers from arXiv
 python -m paperdigest enrich               # add Semantic Scholar + PWC data
 python -m paperdigest score                # compute scores
 python -m paperdigest digest --dry-run     # generate digest without delivering
+python -m paperdigest serve                # start web dashboard (localhost:8000)
 python -m paperdigest stats                # show DB and LLM usage statistics
 python -m paperdigest -v <subcommand>      # verbose/debug logging
+./wc run                                   # shorthand wrapper for python -m paperdigest
 ```
 
 ## Architecture
 
 ### Pipeline Flow
 ```
-arXiv API → Dedup → SQLite → Semantic Scholar + PWC → Score → [LLM Summary] → Markdown / Telegram
- (fetch)   (batch)  (store)       (enrich)           (score)   (optional)      (deliver)
+arXiv + Blogs + DBLP → Dedup → SQLite → Semantic Scholar + PWC → Score → [LLM Summary] → Markdown / Telegram / Web
+       (fetch)         (batch)  (store)       (enrich)           (score)   (optional)      (deliver)
 ```
 
 ### Package Layout (`src/paperdigest/`)
 
-- **cli.py** — argparse-based CLI with 7 subcommands, global `-v` flag
+- **cli.py** — argparse-based CLI with 8 subcommands (`run`, `fetch`, `enrich`, `score`, `digest`, `init`, `serve`, `stats`), global `-v` flag
 - **config.py** — YAML loading into validated dataclasses; loads secrets from `.env` file (falls back to env vars: `LLM_API_KEY`, `SEMANTIC_SCHOLAR_API_KEY`, `TELEGRAM_*`)
 - **models.py** — core data models: `Paper`, `Scores`, `Summary`, `DigestEntry`, `Digest`
 - **db.py** — SQLite with WAL mode; context manager (`with Database(...) as db:`); 4 tables (`papers`, `scores`, `digests`, `llm_usage`); upsert patterns, cost tracking
 - **dedup.py** — 4-stage deduplication: exact arXiv ID → exact DOI → fuzzy title within batch → fuzzy title against DB (SequenceMatcher, 0.85 threshold)
 - **scoring.py** — relevance score (keyword matching in title+abstract) + quality score (venue tier, h-index, citations, code, freshness) → weighted final score
-- **summarizer.py** — OpenAI-compatible LLM with structured JSON output; per-run ($0.50) and monthly ($10) cost caps with graceful degradation
-- **collectors/** — abstract `BaseCollector` interface; `ArxivCollector` with query building, rate limiting (3s delay, 3 retries)
+- **summarizer.py** — OpenAI-compatible LLM with structured JSON output; supports abstract-only or full-text PDF summarization (`use_full_text` config); per-run ($0.50) and monthly ($10) cost caps with graceful degradation
+- **pdf.py** — PDF download and text extraction via PyMuPDF for full-text summarization
+- **collectors/** — abstract `BaseCollector` interface:
+  - `arxiv.py` — arXiv API with query building, rate limiting (3s delay, 3 retries)
+  - `nvidia.py` — NVIDIA Developer Blog via RSS feed, filtered by AV keywords
+  - `waymo.py` — Waymo Research page scraper, extracts arXiv IDs from links
+  - `wayve.py` — Wayve Science scraper (currently blocked by WAF, disabled in config)
+  - `dblp.py` — DBLP conference proceedings search; covers CVPR, ICRA, IROS, ECCV, IV, ITSC, etc. (NeurIPS excluded — triggers DBLP API 500)
+- **web.py** — FastAPI web dashboard with digest viewer and pipeline trigger
 - **enrichment/** — `semantic_scholar.py` (citations, h-index, venue, OA PDF) and `pwc.py` (code links via local JSON dump)
 - **delivery/** — `markdown.py` (sandboxed Jinja2 template at `templates/digest.md.j2`) and `telegram.py` (raw HTTP, MarkdownV2, 4096 char limit)
 
@@ -72,10 +82,11 @@ SQLite at `data/papers.db`. Key tables:
 
 ### Test Structure
 
-33 tests across 3 files — all unit tests with no external API calls:
+53 tests across 4 files — all unit tests with no external API calls:
 - `test_config.py` — config loading, validation, defaults, error cases, weight/alpha validation
 - `test_dedup.py` — title normalization, fuzzy matching, ID/DOI/title dedup (batch + DB)
 - `test_scoring.py` — relevance/quality scoring with `pytest.approx`, freshness decay, ranking
+- `test_summarizer.py` — LLM summarization with mocked OpenAI client, budget enforcement, cost tracking, error handling
 
 ## Runtime Data
 
@@ -96,3 +107,7 @@ Copy `.env.example` to `.env` and fill in values. The `.env` file is loaded auto
 - Scoring uses `paper.published.astimezone(timezone.utc)` for timezone-safe freshness
 - Tests use `tmp_path` fixture for temp files/DBs, never `tempfile.mktemp`
 - Tests use `pytest.approx()` for deterministic float assertions
+- Non-arXiv papers use synthetic IDs: `dblp:conf/cvpr/key`, `nvidia:slug`, `waymo:slug` — dedup handles cross-source overlap via fuzzy title matching
+- Blog/DBLP collectors handle API failures gracefully (return empty list, pipeline continues)
+- LLM config supports `null` temperature and `max_completion_tokens` — omitted from API call when null (required for reasoning models like gpt-5-nano)
+- Summarizer has two prompt variants: `SYSTEM_PROMPT_ABSTRACT` and `SYSTEM_PROMPT_FULL_TEXT`, selected by `config.llm.use_full_text`

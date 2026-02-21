@@ -33,6 +33,22 @@ collection:
       - nvidia
       - waymo
       # - wayve  # currently blocked by WAF (403)
+  conferences:
+    enabled: true
+    years_back: 2       # covers current + 2 prior years (for biennial venues like ECCV/ICCV)
+    venues:
+      - CVPR
+      - ICCV
+      - ECCV
+      - ICML
+      - ICLR
+      - AAAI
+      - CoRL
+      - ICRA
+      - IROS
+      - IV
+      - ITSC
+      # NeurIPS excluded — DBLP API returns 500 for this venue
 
 scoring:
   alpha: 0.65

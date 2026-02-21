@@ -28,10 +28,18 @@ class BlogsConfig:
 
 
 @dataclass
+class ConferencesConfig:
+    enabled: bool = False
+    venues: list[str] = field(default_factory=list)
+    years_back: int = 1
+
+
+@dataclass
 class CollectionConfig:
     lookback_days: int = 7
     max_results: int = 200
     blogs: BlogsConfig = field(default_factory=BlogsConfig)
+    conferences: ConferencesConfig = field(default_factory=ConferencesConfig)
 
 
 @dataclass
@@ -282,6 +290,11 @@ def load_config(path: str | Path) -> Config:
             blogs=BlogsConfig(
                 enabled=coll.get("blogs", {}).get("enabled", False),
                 sources=coll.get("blogs", {}).get("sources", ["nvidia", "waymo", "wayve"]),
+            ),
+            conferences=ConferencesConfig(
+                enabled=coll.get("conferences", {}).get("enabled", False),
+                venues=coll.get("conferences", {}).get("venues", []),
+                years_back=coll.get("conferences", {}).get("years_back", 1),
             ),
         ),
         scoring=scoring,

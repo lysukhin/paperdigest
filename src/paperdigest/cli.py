@@ -92,6 +92,16 @@ def cmd_fetch(args):
             except Exception:
                 logger.exception(f"Failed to collect from {blog_collector.source_name}")
 
+        # Conference proceedings (DBLP)
+        if config.collection.conferences.enabled:
+            from .collectors.dblp import DBLPCollector
+
+            try:
+                dblp = DBLPCollector(config)
+                papers.extend(dblp.collect())
+            except Exception:
+                logger.exception("Failed to collect from DBLP")
+
         new_papers = dedup_papers(papers, db)
 
         for paper in new_papers:
