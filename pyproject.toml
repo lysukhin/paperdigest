@@ -16,6 +16,7 @@ dependencies = [
 
 [project.optional-dependencies]
 llm = ["openai>=1.0"]
+web = ["fastapi>=0.100", "uvicorn[standard]>=0.20", "markdown>=3.4"]
 dev = ["pytest>=7.0"]
 
 [project.scripts]

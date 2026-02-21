@@ -1,17 +1,13 @@
 topic:
   name: "VLM/VLA for Autonomous Driving"
   primary_keywords:
-    - "vision language model autonomous driving"
-    - "VLM autonomous driving"
-    - "vision language action autonomous driving"
-    - "VLA autonomous driving"
-    - "multimodal large language model driving"
+    - "vlm"
+    - "vision-language model"
+    - "vla"
+    - "autonomous driving"
   secondary_keywords:
-    - "end-to-end driving"
-    - "scene understanding driving"
-    - "planning prediction driving"
-    - "visual grounding driving"
-    - "language-guided navigation"
+    - "end-to-end"
+    - "motion planning"
   benchmarks:
     - "nuScenes"
     - "Waymo Open"
@@ -76,15 +72,17 @@ digest:
   output_dir: "data/digests"
 
 llm:
-  enabled: false
-  model: "gpt-4o-mini"
+  enabled: true
+  model: "gpt-5-nano-2025-08-07"
   base_url: "https://api.openai.com/v1"
+  temperature:       # null = use model default
+  max_completion_tokens: 4096
   cost_control:
     max_cost_per_run: 0.50
     max_cost_per_month: 10.00
     warn_at_percent: 80
-    input_cost_per_1k: 0.00015
-    output_cost_per_1k: 0.0006
+    input_cost_per_1k: 0.00005
+    output_cost_per_1k: 0.0004
 
 delivery:
   markdown:

@@ -175,6 +175,15 @@ def cmd_run(args):
     logger.info("Pipeline run complete")
 
 
+def cmd_serve(args):
+    """Start the web dashboard."""
+    config = get_config(args)
+
+    from .web import run_server
+
+    run_server(config)
+
+
 def cmd_stats(args):
     """Show database statistics."""
     config = get_config(args)
@@ -249,6 +258,9 @@ def main(argv: list[str] | None = None):
         help="Skip downloading PWC links",
     )
 
+    # serve
+    subparsers.add_parser("serve", parents=[common], help="Start web dashboard")
+
     # stats
     subparsers.add_parser("stats", parents=[common], help="Show database statistics")
 
@@ -266,6 +278,7 @@ def main(argv: list[str] | None = None):
         "score": cmd_score,
         "digest": cmd_digest,
         "init": cmd_init,
+        "serve": cmd_serve,
         "stats": cmd_stats,
     }
 

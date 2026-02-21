@@ -1,0 +1,193 @@
+"""Web dashboard for paperdigest."""
+
+from __future__ import annotations
+
+import argparse
+import logging
+import re
+import threading
+from datetime import datetime
+from pathlib import Path
+
+from fastapi import FastAPI, Request
+from fastapi.responses import HTMLResponse, JSONResponse
+from starlette.templating import Jinja2Templates
+
+from .config import Config
+
+logger = logging.getLogger("paperdigest.web")
+
+_run_state = {"status": "idle", "started_at": None, "error": None}
+_run_lock = threading.Lock()
+
+
+def create_app(config: Config) -> FastAPI:
+    app = FastAPI(title="paperdigest", docs_url=None, redoc_url=None)
+    template_dir = Path(__file__).parent / "templates" / "web"
+    templates = Jinja2Templates(directory=str(template_dir))
+
+    @app.get("/", response_class=HTMLResponse)
+    async def index(request: Request):
+        digests = _list_digests(config)
+        stats = _get_stats(config)
+        return templates.TemplateResponse(
+            "index.html",
+            {
+                "request": request,
+                "digests": digests,
+                "stats": stats,
+                "topic": config.topic.name,
+                "run_state": _run_state,
+            },
+        )
+
+    @app.get("/digest/{date}", response_class=HTMLResponse)
+    async def view_digest(request: Request, date: str):
+        # Validate date format to prevent path traversal
+        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", date):
+            return HTMLResponse("Invalid date format", status_code=400)
+        content = _render_digest(config, date)
+        if content is None:
+            return HTMLResponse("Digest not found", status_code=404)
+        return templates.TemplateResponse(
+            "digest_view.html",
+            {
+                "request": request,
+                "content": content,
+                "date": date,
+                "topic": config.topic.name,
+            },
+        )
+
+    @app.post("/api/run")
+    async def trigger_run():
+        with _run_lock:
+            if _run_state["status"] == "running":
+                return JSONResponse({"error": "Already running"}, status_code=409)
+            _run_state["status"] = "running"
+            _run_state["started_at"] = datetime.now().isoformat()
+            _run_state["error"] = None
+
+        thread = threading.Thread(target=_run_pipeline, args=(config,), daemon=True)
+        thread.start()
+        return {"status": "started"}
+
+    @app.get("/api/run/status")
+    async def run_status():
+        return _run_state
+
+    return app
+
+
+def _list_digests(config: Config) -> list[dict]:
+    digest_dir = config.digest_dir
+    if not digest_dir.exists():
+        return []
+
+    digests = []
+    for path in sorted(digest_dir.glob("digest_*.md"), reverse=True):
+        meta = _parse_digest_meta(path)
+        if meta:
+            digests.append(meta)
+    return digests
+
+
+def _parse_digest_meta(path: Path) -> dict | None:
+    match = re.search(r"digest_(\d{4}-\d{2}-\d{2})", path.name)
+    if not match:
+        return None
+
+    date_str = match.group(1)
+    content = path.read_text()
+
+    topic = ""
+    papers_count = 0
+    first_papers: list[str] = []
+
+    for line in content.split("\n"):
+        if line.startswith("# Paper Digest:"):
+            topic = line.replace("# Paper Digest:", "").strip()
+        elif "Ranked:" in line:
+            m = re.search(r"Ranked:\*\*\s*(\d+)", line)
+            if m:
+                papers_count = int(m.group(1))
+        elif line.startswith("## ") and len(first_papers) < 3:
+            title = re.sub(r"^##\s+\d+\.\s*", "", line).strip()
+            if title:
+                first_papers.append(title)
+
+    # Format date nicely
+    try:
+        date_obj = datetime.strptime(date_str, "%Y-%m-%d")
+        display_date = date_obj.strftime("%B %d, %Y")
+    except ValueError:
+        display_date = date_str
+
+    return {
+        "date": date_str,
+        "display_date": display_date,
+        "topic": topic,
+        "papers_count": papers_count,
+        "preview_titles": first_papers,
+    }
+
+
+def _render_digest(config: Config, date: str) -> str | None:
+    import markdown
+
+    path = config.digest_dir / f"digest_{date}.md"
+    if not path.exists():
+        return None
+
+    md = markdown.Markdown(extensions=["tables", "fenced_code"])
+    return md.convert(path.read_text())
+
+
+def _get_stats(config: Config) -> dict:
+    from .db import Database
+
+    stats = {"papers": 0, "scored": 0, "digests": 0}
+    if not config.db_path.exists():
+        return stats
+
+    try:
+        with Database(config.db_path) as db:
+            db.init_schema()
+            stats["papers"] = db.get_paper_count()
+            stats["scored"] = db.get_scored_count()
+            stats["digests"] = db.get_digest_count()
+    except Exception:
+        logger.debug("Could not read DB stats", exc_info=True)
+    return stats
+
+
+def _run_pipeline(config: Config):
+    try:
+        from .cli import cmd_run
+
+        args = argparse.Namespace(
+            config=str(config.base_dir / "config.yaml"),
+            verbose=False,
+        )
+        cmd_run(args)
+
+        with _run_lock:
+            _run_state["status"] = "done"
+    except Exception as e:
+        logger.exception("Pipeline run failed")
+        with _run_lock:
+            _run_state["status"] = "error"
+            _run_state["error"] = str(e)
+
+
+def run_server(config: Config):
+    import uvicorn
+
+    app = create_app(config)
+    host = config.web.host
+    port = config.web.port
+
+    print(f"  paperdigest dashboard")
+    print(f"  http://{host}:{port}")
+    print()
+    uvicorn.run(app, host=host, port=port, log_level="info")

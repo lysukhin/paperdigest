@@ -105,15 +105,18 @@ class Summarizer:
         user_msg = USER_TEMPLATE.format(title=paper.title, abstract=paper.abstract)
 
         try:
-            response = self.client.chat.completions.create(
+            kwargs = dict(
                 model=self.config.llm.model,
                 messages=[
                     {"role": "system", "content": SYSTEM_PROMPT},
                     {"role": "user", "content": user_msg},
                 ],
-                temperature=0.3,
-                max_tokens=800,
             )
+            if self.config.llm.temperature is not None:
+                kwargs["temperature"] = self.config.llm.temperature
+            if self.config.llm.max_completion_tokens is not None:
+                kwargs["max_completion_tokens"] = self.config.llm.max_completion_tokens
+            response = self.client.chat.completions.create(**kwargs)
 
             # Track usage
             usage = response.usage

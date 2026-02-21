@@ -67,6 +67,8 @@ class LLMConfig:
     enabled: bool = False
     model: str = "gpt-4o-mini"
     base_url: str = "https://api.openai.com/v1"
+    temperature: float | None = 0.3
+    max_completion_tokens: int | None = 800
     cost_control: CostControl = field(default_factory=CostControl)
 
 
@@ -88,6 +90,12 @@ class TelegramDeliveryConfig:
 
 
 @dataclass
+class WebConfig:
+    host: str = "127.0.0.1"
+    port: int = 8000
+
+
+@dataclass
 class DeliveryConfig:
     markdown: MarkdownDeliveryConfig = field(default_factory=MarkdownDeliveryConfig)
     telegram: TelegramDeliveryConfig = field(default_factory=TelegramDeliveryConfig)
@@ -101,6 +109,7 @@ class Config:
     llm: LLMConfig = field(default_factory=LLMConfig)
     digest: DigestConfig = field(default_factory=DigestConfig)
     delivery: DeliveryConfig = field(default_factory=DeliveryConfig)
+    web: WebConfig = field(default_factory=WebConfig)
     database: str = "data/papers.db"
     pwc_links_path: str = "data/pwc_links.json"
 
@@ -163,6 +172,8 @@ def _build_llm(d: dict) -> LLMConfig:
         enabled=d.get("enabled", False),
         model=d.get("model", "gpt-4o-mini"),
         base_url=d.get("base_url", "https://api.openai.com/v1"),
+        temperature=d.get("temperature", 0.3),
+        max_completion_tokens=d.get("max_completion_tokens", 800),
         cost_control=CostControl(**cc),
     )
 
@@ -250,6 +261,8 @@ def load_config(path: str | Path) -> Config:
     if abs(weight_sum - 1.0) > 0.01:
         raise ValueError(f"Quality weights must sum to 1.0, got {weight_sum:.4f}")
 
+    web_raw = raw.get("web", {})
+
     return Config(
         topic=_build_topic(raw["topic"]),
         collection=CollectionConfig(
@@ -264,6 +277,10 @@ def load_config(path: str | Path) -> Config:
             output_dir=raw.get("digest", {}).get("output_dir", "data/digests"),
         ),
         delivery=_build_delivery(raw.get("delivery", {})),
+        web=WebConfig(
+            host=web_raw.get("host", "127.0.0.1"),
+            port=web_raw.get("port", 8000),
+        ),
         database=db_raw.get("path", "data/papers.db") if isinstance(db_raw, dict) else db_raw,
         pwc_links_path=pwc_raw.get("links_path", "data/pwc_links.json") if isinstance(pwc_raw, dict) else pwc_raw,
         base_dir=base_dir,
