@@ -14,9 +14,10 @@ from .models import Paper, Summary
 
 logger = logging.getLogger(__name__)
 
-SYSTEM_PROMPT = """You are a research paper analyst specializing in autonomous driving and computer vision.
+SYSTEM_PROMPT_ABSTRACT = """You are a research paper analyst specializing in autonomous driving and computer vision.
 Given a paper's title and abstract, produce a structured JSON summary with these fields:
 - one_liner: A single sentence capturing the core contribution (max 150 chars)
+- affiliations: Comma-separated list of author affiliations/institutions (e.g. "MIT, Google Research, Tsinghua University")
 - method: Brief description of the proposed method/approach (2-3 sentences)
 - data_benchmarks: Datasets and benchmarks used for evaluation
 - key_results: Most important quantitative or qualitative results
@@ -26,9 +27,27 @@ Given a paper's title and abstract, produce a structured JSON summary with these
 
 Respond with ONLY valid JSON, no markdown fences."""
 
-USER_TEMPLATE = """Paper title: {title}
+SYSTEM_PROMPT_FULL_TEXT = """You are a research paper analyst specializing in autonomous driving and computer vision.
+Given a paper's title and full text, produce a structured JSON summary with these fields:
+- one_liner: A single sentence capturing the core contribution (max 150 chars)
+- affiliations: Comma-separated list of author affiliations/institutions (e.g. "MIT, Google Research, Tsinghua University")
+- method: Detailed description of the proposed method/approach (3-5 sentences)
+- data_benchmarks: Datasets and benchmarks used for evaluation, with specific metrics reported
+- key_results: Most important quantitative results with numbers
+- novelty: What makes this work novel compared to prior work
+- ad_relevance: How this work relates to autonomous driving applications
+- limitations: Key limitations or open questions (be honest but brief)
+
+Respond with ONLY valid JSON, no markdown fences."""
+
+USER_TEMPLATE_ABSTRACT = """Paper title: {title}
 
 Abstract: {abstract}"""
+
+USER_TEMPLATE_FULL_TEXT = """Paper title: {title}
+
+Full text:
+{full_text}"""
 
 
 class Summarizer:
@@ -95,6 +114,50 @@ class Summarizer:
 
         return True, ""
 
+    def _build_messages(self, paper: Paper) -> list[dict]:
+        """Build the LLM messages, using full text if enabled and available."""
+        use_full = self.config.llm.use_full_text
+        full_text = None
+
+        if use_full:
+            pdf_url = paper.oa_pdf_url or paper.pdf_url
+            if pdf_url:
+                from .pdf import fetch_paper_text
+
+                logger.info(f"Fetching full text for {paper.arxiv_id}...")
+                full_text = fetch_paper_text(
+                    pdf_url, max_chars=self.config.llm.max_text_chars
+                )
+                if full_text:
+                    logger.info(
+                        f"Extracted {len(full_text)} chars from PDF"
+                    )
+                else:
+                    logger.warning(
+                        f"Full text extraction failed for {paper.arxiv_id}, "
+                        "falling back to abstract"
+                    )
+            else:
+                logger.warning(
+                    f"No PDF URL for {paper.arxiv_id}, falling back to abstract"
+                )
+
+        if full_text:
+            system = SYSTEM_PROMPT_FULL_TEXT
+            user = USER_TEMPLATE_FULL_TEXT.format(
+                title=paper.title, full_text=full_text
+            )
+        else:
+            system = SYSTEM_PROMPT_ABSTRACT
+            user = USER_TEMPLATE_ABSTRACT.format(
+                title=paper.title, abstract=paper.abstract
+            )
+
+        return [
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
+        ]
+
     def summarize_paper(self, paper: Paper) -> Summary | None:
         """Summarize a single paper. Returns None on failure."""
         ok, reason = self._check_budget()
@@ -102,15 +165,12 @@ class Summarizer:
             logger.warning(f"Skipping summary for {paper.arxiv_id}: {reason}")
             return None
 
-        user_msg = USER_TEMPLATE.format(title=paper.title, abstract=paper.abstract)
+        messages = self._build_messages(paper)
 
         try:
             kwargs = dict(
                 model=self.config.llm.model,
-                messages=[
-                    {"role": "system", "content": SYSTEM_PROMPT},
-                    {"role": "user", "content": user_msg},
-                ],
+                messages=messages,
             )
             if self.config.llm.temperature is not None:
                 kwargs["temperature"] = self.config.llm.temperature
@@ -145,6 +205,7 @@ class Summarizer:
 
             return Summary(
                 one_liner=data.get("one_liner", ""),
+                affiliations=data.get("affiliations", ""),
                 method=data.get("method", ""),
                 data_benchmarks=data.get("data_benchmarks", ""),
                 key_results=data.get("key_results", ""),

@@ -69,6 +69,8 @@ class LLMConfig:
     base_url: str = "https://api.openai.com/v1"
     temperature: float | None = 0.3
     max_completion_tokens: int | None = 800
+    use_full_text: bool = False
+    max_text_chars: int = 50000
     cost_control: CostControl = field(default_factory=CostControl)
 
 
@@ -174,6 +176,8 @@ def _build_llm(d: dict) -> LLMConfig:
         base_url=d.get("base_url", "https://api.openai.com/v1"),
         temperature=d.get("temperature", 0.3),
         max_completion_tokens=d.get("max_completion_tokens", 800),
+        use_full_text=d.get("use_full_text", False),
+        max_text_chars=d.get("max_text_chars", 50000),
         cost_control=CostControl(**cc),
     )
 

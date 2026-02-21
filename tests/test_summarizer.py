@@ -58,6 +58,7 @@ def _make_llm_response(content: str, input_tokens=100, output_tokens=200):
 
 VALID_SUMMARY_JSON = json.dumps({
     "one_liner": "A novel VLM approach for autonomous driving.",
+    "affiliations": "MIT, Waymo Research",
     "method": "We use a vision-language model to process driving scenes.",
     "data_benchmarks": "nuScenes, CARLA",
     "key_results": "95% accuracy on nuScenes planning benchmark.",
@@ -88,6 +89,7 @@ class TestSummarizeOnePaper:
 
         assert isinstance(result, Summary)
         assert result.one_liner == "A novel VLM approach for autonomous driving."
+        assert result.affiliations == "MIT, Waymo Research"
         assert result.method == "We use a vision-language model to process driving scenes."
         assert result.data_benchmarks == "nuScenes, CARLA"
         assert result.key_results == "95% accuracy on nuScenes planning benchmark."

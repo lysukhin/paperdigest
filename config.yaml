@@ -1,13 +1,16 @@
 topic:
   name: "VLM/VLA for Autonomous Driving"
   primary_keywords:
-    - "vlm"
-    - "vision-language model"
-    - "vla"
     - "autonomous driving"
+    - "motion planning"
+    - "driving"
   secondary_keywords:
     - "end-to-end"
-    - "motion planning"
+    - "vision-language model"
+    - "vlm"
+    - "action"
+    - "vla"
+    - "reasoning"
   benchmarks:
     - "nuScenes"
     - "Waymo Open"
@@ -68,7 +71,7 @@ scoring:
 
 digest:
   top_n: 20
-  summarize_top_n: 15
+  summarize_top_n: 10
   output_dir: "data/digests"
 
 llm:
@@ -76,7 +79,9 @@ llm:
   model: "gpt-5-nano-2025-08-07"
   base_url: "https://api.openai.com/v1"
   temperature:       # null = use model default
-  max_completion_tokens: 4096
+  max_completion_tokens: 16384
+  use_full_text: false  # false = use only abstracts
+  max_text_chars: 50000
   cost_control:
     max_cost_per_run: 0.50
     max_cost_per_month: 10.00

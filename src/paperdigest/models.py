@@ -44,6 +44,7 @@ class Summary:
     """LLM-generated structured summary."""
 
     one_liner: str = ""
+    affiliations: str = ""
     method: str = ""
     data_benchmarks: str = ""
     key_results: str = ""

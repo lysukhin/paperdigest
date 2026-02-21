@@ -26,7 +26,9 @@
 
 > {{ entry.summary.one_liner }}
 
-**Method:** {{ entry.summary.method }}
+{% if entry.summary.affiliations %}**Affiliations:** {{ entry.summary.affiliations }}
+
+{% endif %}**Method:** {{ entry.summary.method }}
 
 **Data & Benchmarks:** {{ entry.summary.data_benchmarks }}
 
