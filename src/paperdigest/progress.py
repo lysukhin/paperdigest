@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import sys
 import time
@@ -12,7 +13,6 @@ from typing import Generator
 
 from rich.console import Console
 from rich.live import Live
-from rich.progress import BarColumn, ProgressColumn, Task
 from rich.table import Table
 from rich.text import Text
 
@@ -90,16 +90,6 @@ def _compute_eta(elapsed: float, completed: int, total: int) -> str:
     return _format_elapsed(remaining)
 
 
-class ETAColumn(ProgressColumn):
-    """Shows ETA based on StageInfo timing."""
-
-    def render(self, task: Task) -> Text:
-        eta = task.fields.get("eta", "")
-        if eta:
-            return Text(f"ETA {eta}", style="cyan")
-        return Text("")
-
-
 class PipelineTracker:
     """Rich live display of pipeline stages with progress bars and ETA."""
 
@@ -107,6 +97,7 @@ class PipelineTracker:
         self.console = console or Console()
         self._stages: list[StageInfo] = []
         self._live: Live | None = None
+        self._saved_log_level: int | None = None
 
     def __enter__(self):
         self._live = Live(
@@ -115,9 +106,19 @@ class PipelineTracker:
             refresh_per_second=4,
         )
         self._live.__enter__()
+        # Suppress INFO logging while Live is active — the tracker IS the UI.
+        # Warnings/errors still get through.
+        pd_logger = logging.getLogger("paperdigest")
+        self._saved_log_level = pd_logger.level
+        pd_logger.setLevel(logging.WARNING)
         return self
 
     def __exit__(self, *exc):
+        # Restore log level before stopping Live
+        pd_logger = logging.getLogger("paperdigest")
+        if self._saved_log_level is not None:
+            pd_logger.setLevel(self._saved_log_level)
+            self._saved_log_level = None
         if self._live:
             # Final render with all completed stages
             self._live.update(self._render())

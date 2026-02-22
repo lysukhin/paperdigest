@@ -34,7 +34,7 @@ collection:
   lookback_days: 7
   max_results: 200
   blogs:
-    enabled: true
+    enabled: false
     sources:
       - nvidia
       - waymo
@@ -114,6 +114,7 @@ llm:
     temperature:
     max_completion_tokens: 16384
     max_text_chars: 50000
+    language: "English"
     cost_control:
       max_cost_per_run: 0.50
       max_cost_per_month: 10.00

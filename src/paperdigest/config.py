@@ -85,6 +85,7 @@ class SummarizerLLMConfig:
     temperature: float | None = None
     max_completion_tokens: int | None = 16384
     max_text_chars: int = 50000
+    language: str = "Russian"
     cost_control: CostControl = field(default_factory=CostControl)
 
 
@@ -207,6 +208,7 @@ def _build_llm(d: dict) -> LLMConfig:
             temperature=summ_raw.get("temperature"),
             max_completion_tokens=summ_raw.get("max_completion_tokens", 16384),
             max_text_chars=summ_raw.get("max_text_chars", 50000),
+            language=summ_raw.get("language", "Russian"),
             cost_control=CostControl(**summ_cc),
         ),
     )

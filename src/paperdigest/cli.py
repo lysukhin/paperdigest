@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import logging
 import os
+import shutil
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -23,27 +24,13 @@ def _is_interactive() -> bool:
     return hasattr(sys.stdout, "isatty") and sys.stdout.isatty()
 
 
-def setup_logging(verbose: bool = False, interactive: bool = False):
+def setup_logging(verbose: bool = False):
     level = logging.DEBUG if verbose else logging.INFO
-    if interactive:
-        from rich.console import Console
-        from rich.logging import RichHandler
-
-        console = Console()
-        handler = RichHandler(
-            console=console,
-            show_time=True,
-            show_path=False,
-            markup=False,
-        )
-        handler.setLevel(level)
-        logging.basicConfig(level=level, handlers=[handler])
-    else:
-        logging.basicConfig(
-            level=level,
-            format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-            datefmt="%H:%M:%S",
-        )
+    logging.basicConfig(
+        level=level,
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        datefmt="%H:%M:%S",
+    )
 
 
 def get_config(args) -> Config:
@@ -379,6 +366,97 @@ def cmd_run(args):
     logger.info("Pipeline run complete")
 
 
+def _format_size(size_bytes: int) -> str:
+    """Format byte count as human-readable string."""
+    if size_bytes < 1024:
+        return f"{size_bytes} B"
+    elif size_bytes < 1024 * 1024:
+        return f"{size_bytes / 1024:.1f} KB"
+    else:
+        return f"{size_bytes / (1024 * 1024):.1f} MB"
+
+
+def _dir_size(path: Path) -> int:
+    """Total size of all files in a directory."""
+    return sum(f.stat().st_size for f in path.rglob("*") if f.is_file())
+
+
+def cmd_clean(args):
+    """Remove generated data (database, digests, PWC cache)."""
+    from rich.console import Console
+    from rich.table import Table
+
+    config = get_config(args)
+    console = Console()
+
+    clean_db = args.db
+    clean_digests = args.digests
+    clean_pwc = args.pwc
+    # No flags = --all
+    if not (clean_db or clean_digests or clean_pwc or args.all):
+        clean_db = clean_digests = clean_pwc = True
+    if args.all:
+        clean_db = clean_digests = clean_pwc = True
+
+    # Collect targets: (label, paths_to_delete, display_path, size)
+    targets = []
+
+    if clean_db:
+        db_path = config.db_path
+        db_files = [db_path, db_path.with_suffix(".db-wal"), db_path.with_suffix(".db-shm")]
+        existing = [f for f in db_files if f.exists()]
+        if existing:
+            size = sum(f.stat().st_size for f in existing)
+            targets.append(("Database", existing, str(db_path), size))
+
+    if clean_digests:
+        digest_dir = config.digest_dir
+        if digest_dir.exists() and any(digest_dir.iterdir()):
+            size = _dir_size(digest_dir)
+            targets.append(("Digests", [digest_dir], str(digest_dir), size))
+
+    if clean_pwc:
+        pwc_path = config.pwc_path
+        if pwc_path.exists():
+            size = pwc_path.stat().st_size
+            targets.append(("PWC cache", [pwc_path], str(pwc_path), size))
+
+    if not targets:
+        console.print("Nothing to clean.", style="dim")
+        return
+
+    # Show what will be deleted
+    table = Table(title="Will be deleted", border_style="red")
+    table.add_column("Target", style="bold")
+    table.add_column("Path")
+    table.add_column("Size", justify="right")
+    for label, _, display_path, size in targets:
+        table.add_row(label, display_path, _format_size(size))
+    console.print(table)
+
+    # Confirm
+    if not args.yes:
+        try:
+            answer = input("Delete? [y/N] ").strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            console.print("\nAborted.", style="dim")
+            return
+        if answer not in ("y", "yes"):
+            console.print("Aborted.", style="dim")
+            return
+
+    # Delete
+    for label, paths, _, _ in targets:
+        for p in paths:
+            if p.is_dir():
+                shutil.rmtree(p)
+            elif p.exists():
+                p.unlink()
+        console.print(f"  Removed {label}", style="green")
+
+    console.print("Clean complete.", style="bold green")
+
+
 def cmd_serve(args):
     """Start the web dashboard."""
     config = get_config(args)
@@ -481,6 +559,14 @@ def main(argv: list[str] | None = None):
         help="Skip downloading PWC links",
     )
 
+    # clean
+    clean_parser = subparsers.add_parser("clean", parents=[common], help="Remove generated data")
+    clean_parser.add_argument("--db", action="store_true", help="Remove database")
+    clean_parser.add_argument("--digests", action="store_true", help="Remove generated digests")
+    clean_parser.add_argument("--pwc", action="store_true", help="Remove PWC links cache")
+    clean_parser.add_argument("--all", action="store_true", help="Remove everything (default if no flags)")
+    clean_parser.add_argument("-y", "--yes", action="store_true", help="Skip confirmation prompt")
+
     # serve
     subparsers.add_parser("serve", parents=[common], help="Start web dashboard")
 
@@ -488,8 +574,7 @@ def main(argv: list[str] | None = None):
     subparsers.add_parser("stats", parents=[common], help="Show database statistics")
 
     args = parser.parse_args(argv)
-    interactive = _is_interactive()
-    setup_logging(args.verbose, interactive=interactive)
+    setup_logging(args.verbose)
 
     if not args.command:
         parser.print_help()
@@ -503,6 +588,7 @@ def main(argv: list[str] | None = None):
         "filter": cmd_filter,
         "digest": cmd_digest,
         "init": cmd_init,
+        "clean": cmd_clean,
         "serve": cmd_serve,
         "stats": cmd_stats,
     }

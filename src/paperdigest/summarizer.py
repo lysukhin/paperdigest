@@ -25,6 +25,7 @@ Given a paper's title and abstract, produce a structured JSON summary with these
 - ad_relevance: How this work relates to autonomous driving applications
 - limitations: Key limitations or open questions (be honest but brief)
 
+Write all summary field values in {language}. Keep technical terms, model names, dataset names, and metric names in their original English form.
 Respond with ONLY valid JSON, no markdown fences."""
 
 SYSTEM_PROMPT_FULL_TEXT = """You are a research paper analyst specializing in autonomous driving and computer vision.
@@ -38,6 +39,7 @@ Given a paper's title and full text, produce a structured JSON summary with thes
 - ad_relevance: How this work relates to autonomous driving applications
 - limitations: Key limitations or open questions (be honest but brief)
 
+Write all summary field values in {language}. Keep technical terms, model names, dataset names, and metric names in their original English form.
 Respond with ONLY valid JSON, no markdown fences."""
 
 USER_TEMPLATE_ABSTRACT = """Paper title: {title}
@@ -151,13 +153,15 @@ class Summarizer:
                 f"No PDF URL for {paper.arxiv_id}, falling back to abstract"
             )
 
+        language = self.llm_cfg.language
+
         if full_text:
-            system = SYSTEM_PROMPT_FULL_TEXT
+            system = SYSTEM_PROMPT_FULL_TEXT.format(language=language)
             user = USER_TEMPLATE_FULL_TEXT.format(
                 title=paper.title, full_text=full_text
             )
         else:
-            system = SYSTEM_PROMPT_ABSTRACT
+            system = SYSTEM_PROMPT_ABSTRACT.format(language=language)
             user = USER_TEMPLATE_ABSTRACT.format(
                 title=paper.title, abstract=paper.abstract
             )
