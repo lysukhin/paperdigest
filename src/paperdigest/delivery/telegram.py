@@ -13,6 +13,7 @@ logger = logging.getLogger(__name__)
 
 TELEGRAM_API = "https://api.telegram.org/bot{token}/sendMessage"
 MAX_MESSAGE_LENGTH = 4096
+TOP_N_TELEGRAM = 5
 
 
 def _escape_markdown(text: str) -> str:
@@ -23,23 +24,23 @@ def _escape_markdown(text: str) -> str:
 
 
 def _format_telegram_message(digest: Digest, config: Config) -> str:
-    """Format digest as a Telegram-friendly message (Markdown)."""
+    """Format digest as a compact Telegram message (MarkdownV2)."""
+    topic = _escape_markdown(digest.topic_name)
+    date_str = _escape_markdown(digest.date.strftime("%Y-%m-%d"))
+    n_ranked = len(digest.entries)
+
     lines = [
-        f"*Paper Digest: {_escape_markdown(digest.topic_name)}*",
-        f"_{digest.date.strftime('%Y-%m-%d')}_ | {digest.total_collected} collected, {len(digest.entries)} ranked\n",
+        f"*Paper Digest: {topic}*",
+        f"_{date_str}_ \\| {digest.total_collected} collected, {n_ranked} ranked",
+        "",
     ]
 
-    for entry in digest.entries[:10]:  # Telegram messages have length limits
-        p = entry.paper
-        s = entry.scores
-        escaped_title = _escape_markdown(p.title[:80])
-        line = f"*{entry.rank}\\.* [{escaped_title}](https://arxiv.org/abs/{p.arxiv_id})"
-        line += f"\n   Quality: {s.quality:.2f} | Cites: {p.citations or 0}"
-        if p.code_url:
-            line += f" | [Code]({p.code_url})"
+    for entry in digest.entries[:TOP_N_TELEGRAM]:
+        title = _escape_markdown(entry.paper.title[:80])
+        lines.append(f"*{entry.rank}\\.*  {title}")
         if entry.summary and entry.summary.one_liner:
-            line += f"\n   _{_escape_markdown(entry.summary.one_liner)}_"
-        lines.append(line)
+            one_liner = _escape_markdown(entry.summary.one_liner)
+            lines.append(f"  _\\> {one_liner}_")
 
     return "\n".join(lines)
 
