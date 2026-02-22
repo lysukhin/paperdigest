@@ -49,12 +49,24 @@ USER_TEMPLATE_FULL_TEXT = """Paper title: {title}
 Full text:
 {full_text}"""
 
+RANKING_SYSTEM_PROMPT = """You are ranking research papers by relevance and importance for a digest about:
+{description}
+
+You will receive a list of papers with their summaries and quality metadata.
+Rank them from most to least relevant/important to the described topic.
+Respond with ONLY valid JSON: {{"ranking": ["arxiv_id_1", "arxiv_id_2", ...]}}"""
+
+RANKING_USER_TEMPLATE = """Papers to rank:
+
+{papers_list}"""
+
 
 class Summarizer:
     """LLM summarizer with cost tracking and budget enforcement."""
 
     def __init__(self, config: Config, db: Database):
         self.config = config
+        self.llm_cfg = config.llm.summarizer
         self.db = db
         self.run_id = str(uuid.uuid4())[:8]
         self.run_cost = 0.0
@@ -77,19 +89,19 @@ class Summarizer:
                 raise RuntimeError("LLM_API_KEY environment variable not set")
             self._client = OpenAI(
                 api_key=api_key,
-                base_url=self.config.llm.base_url,
+                base_url=self.llm_cfg.base_url,
             )
         return self._client
 
     def _estimate_cost(self, input_tokens: int, output_tokens: int) -> float:
-        cc = self.config.llm.cost_control
+        cc = self.llm_cfg.cost_control
         return (input_tokens / 1000) * cc.input_cost_per_1k + (
             output_tokens / 1000
         ) * cc.output_cost_per_1k
 
     def _check_budget(self) -> tuple[bool, str]:
         """Check if we're within budget. Returns (ok, reason)."""
-        cc = self.config.llm.cost_control
+        cc = self.llm_cfg.cost_control
 
         # Check monthly budget
         monthly_cost = self.db.get_monthly_llm_cost()
@@ -115,32 +127,29 @@ class Summarizer:
         return True, ""
 
     def _build_messages(self, paper: Paper) -> list[dict]:
-        """Build the LLM messages, using full text if enabled and available."""
-        use_full = self.config.llm.use_full_text
+        """Build the LLM messages, always trying full text first."""
         full_text = None
+        pdf_url = paper.oa_pdf_url or paper.pdf_url
+        if pdf_url:
+            from .pdf import fetch_paper_text
 
-        if use_full:
-            pdf_url = paper.oa_pdf_url or paper.pdf_url
-            if pdf_url:
-                from .pdf import fetch_paper_text
-
-                logger.info(f"Fetching full text for {paper.arxiv_id}...")
-                full_text = fetch_paper_text(
-                    pdf_url, max_chars=self.config.llm.max_text_chars
+            logger.info(f"Fetching full text for {paper.arxiv_id}...")
+            full_text = fetch_paper_text(
+                pdf_url, max_chars=self.llm_cfg.max_text_chars
+            )
+            if full_text:
+                logger.info(
+                    f"Extracted {len(full_text)} chars from PDF"
                 )
-                if full_text:
-                    logger.info(
-                        f"Extracted {len(full_text)} chars from PDF"
-                    )
-                else:
-                    logger.warning(
-                        f"Full text extraction failed for {paper.arxiv_id}, "
-                        "falling back to abstract"
-                    )
             else:
                 logger.warning(
-                    f"No PDF URL for {paper.arxiv_id}, falling back to abstract"
+                    f"Full text extraction failed for {paper.arxiv_id}, "
+                    "falling back to abstract"
                 )
+        else:
+            logger.warning(
+                f"No PDF URL for {paper.arxiv_id}, falling back to abstract"
+            )
 
         if full_text:
             system = SYSTEM_PROMPT_FULL_TEXT
@@ -169,13 +178,13 @@ class Summarizer:
 
         try:
             kwargs = dict(
-                model=self.config.llm.model,
+                model=self.llm_cfg.model,
                 messages=messages,
             )
-            if self.config.llm.temperature is not None:
-                kwargs["temperature"] = self.config.llm.temperature
-            if self.config.llm.max_completion_tokens is not None:
-                kwargs["max_completion_tokens"] = self.config.llm.max_completion_tokens
+            if self.llm_cfg.temperature is not None:
+                kwargs["temperature"] = self.llm_cfg.temperature
+            if self.llm_cfg.max_completion_tokens is not None:
+                kwargs["max_completion_tokens"] = self.llm_cfg.max_completion_tokens
             response = self.client.chat.completions.create(**kwargs)
 
             # Track usage
@@ -246,3 +255,107 @@ class Summarizer:
             )
 
         return summaries
+
+    def _fallback_ranking(
+        self,
+        papers: list[Paper],
+        quality_scores: dict[str, float],
+    ) -> dict[str, int]:
+        """Fallback ranking by quality score descending."""
+        sorted_ids = sorted(
+            [p.arxiv_id for p in papers],
+            key=lambda aid: quality_scores.get(aid, 0.0),
+            reverse=True,
+        )
+        return {aid: rank for rank, aid in enumerate(sorted_ids, start=1)}
+
+    def rank_papers(
+        self,
+        papers: list[Paper],
+        summaries: dict[str, Summary],
+        quality_scores: dict[str, float],
+    ) -> dict[str, int]:
+        """Rank papers by LLM. Returns {arxiv_id: rank} where 1=best."""
+        if not papers:
+            return {}
+
+        # Build papers list for the prompt
+        lines = []
+        for p in papers:
+            summary = summaries.get(p.arxiv_id)
+            one_liner = summary.one_liner if summary else "No summary available"
+            q_score = quality_scores.get(p.arxiv_id, 0.0)
+            line = (
+                f"- ID: {p.arxiv_id}\n"
+                f"  Title: {p.title}\n"
+                f"  One-liner: {one_liner}\n"
+                f"  Venue: {p.venue or 'N/A'}\n"
+                f"  Citations: {p.citations or 0}\n"
+                f"  Quality score: {q_score:.2f}"
+            )
+            lines.append(line)
+
+        papers_list = "\n\n".join(lines)
+        description = self.config.topic.description or self.config.topic.name
+
+        system = RANKING_SYSTEM_PROMPT.format(description=description)
+        user = RANKING_USER_TEMPLATE.format(papers_list=papers_list)
+
+        try:
+            kwargs = dict(
+                model=self.llm_cfg.model,
+                messages=[
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": user},
+                ],
+            )
+            if self.llm_cfg.temperature is not None:
+                kwargs["temperature"] = self.llm_cfg.temperature
+            if self.llm_cfg.max_completion_tokens is not None:
+                kwargs["max_completion_tokens"] = self.llm_cfg.max_completion_tokens
+
+            response = self.client.chat.completions.create(**kwargs)
+
+            # Track usage
+            usage = response.usage
+            if usage:
+                input_t = usage.prompt_tokens
+                output_t = usage.completion_tokens
+                cost = self._estimate_cost(input_t, output_t)
+                self.run_input_tokens += input_t
+                self.run_output_tokens += output_t
+                self.run_cost += cost
+
+            if not response.choices or response.choices[0].message.content is None:
+                logger.warning("Empty LLM response for ranking")
+                return self._fallback_ranking(papers, quality_scores)
+
+            content = response.choices[0].message.content.strip()
+            content = re.sub(r'^```\w*\n?', '', content)
+            content = re.sub(r'\n?```\s*$', '', content)
+            content = content.strip()
+
+            data = json.loads(content)
+            ranked_ids = data.get("ranking", [])
+
+            # Build ranking dict from LLM response
+            all_ids = {p.arxiv_id for p in papers}
+            ranking: dict[str, int] = {}
+            rank = 1
+            for aid in ranked_ids:
+                if aid in all_ids and aid not in ranking:
+                    ranking[aid] = rank
+                    rank += 1
+
+            # Append any papers missing from LLM response, ordered by quality score
+            missing = [aid for aid in all_ids if aid not in ranking]
+            missing.sort(key=lambda aid: quality_scores.get(aid, 0.0), reverse=True)
+            for aid in missing:
+                ranking[aid] = rank
+                rank += 1
+
+            return ranking
+
+        except Exception:
+            logger.exception("LLM ranking failed, using fallback")
+            return self._fallback_ranking(papers, quality_scores)

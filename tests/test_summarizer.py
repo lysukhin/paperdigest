@@ -6,31 +6,44 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from paperdigest.config import Config, CostControl, LLMConfig, TopicConfig
+from paperdigest.config import (
+    Config,
+    CostControl,
+    LLMConfig,
+    SummarizerLLMConfig,
+    TopicConfig,
+)
 from paperdigest.db import Database
 from paperdigest.models import Paper, Summary
 from paperdigest.summarizer import Summarizer
 
 
-def _make_paper(arxiv_id="2401.00001", title="A Test Paper") -> Paper:
-    return Paper(
+def _make_paper(arxiv_id="2401.00001", title="A Test Paper", **kwargs) -> Paper:
+    defaults = dict(
         arxiv_id=arxiv_id,
         title=title,
         abstract="We propose a novel method for autonomous driving using vision language models.",
         authors=["Author One", "Author Two"],
         published=datetime.now(timezone.utc),
     )
+    defaults.update(kwargs)
+    return Paper(**defaults)
 
 
 def _make_config(**overrides) -> Config:
     defaults = dict(
-        topic=TopicConfig(name="Test", primary_keywords=["test"]),
+        topic=TopicConfig(name="AD", primary_keywords=["driving"], description="Papers about autonomous driving."),
         llm=LLMConfig(
-            enabled=True,
-            model="gpt-4o-mini",
-            cost_control=CostControl(
-                max_cost_per_run=0.50,
-                max_cost_per_month=10.00,
+            summarizer=SummarizerLLMConfig(
+                enabled=True,
+                model="gpt-5-nano",
+                max_text_chars=50000,
+                cost_control=CostControl(
+                    max_cost_per_run=0.50,
+                    max_cost_per_month=10.00,
+                    input_cost_per_1k=0.00005,
+                    output_cost_per_1k=0.0004,
+                ),
             ),
         ),
     )
@@ -204,8 +217,10 @@ class TestBudgetEnforcement:
     def test_per_run_budget_stops_summarization(self, db):
         config = _make_config(
             llm=LLMConfig(
-                enabled=True,
-                cost_control=CostControl(max_cost_per_run=0.001),
+                summarizer=SummarizerLLMConfig(
+                    enabled=True,
+                    cost_control=CostControl(max_cost_per_run=0.001),
+                ),
             ),
         )
         s = Summarizer(config, db)
@@ -218,15 +233,17 @@ class TestBudgetEnforcement:
         r1 = s.summarize_paper(_make_paper("2401.00001"))
         assert r1 is not None
 
-        # Second call should be skipped — run cost exceeds budget
+        # Second call should be skipped -- run cost exceeds budget
         r2 = s.summarize_paper(_make_paper("2401.00002"))
         assert r2 is None
 
     def test_monthly_budget_exhausted(self, db):
         config = _make_config(
             llm=LLMConfig(
-                enabled=True,
-                cost_control=CostControl(max_cost_per_month=0.01),
+                summarizer=SummarizerLLMConfig(
+                    enabled=True,
+                    cost_control=CostControl(max_cost_per_month=0.01),
+                ),
             ),
         )
 
@@ -319,7 +336,7 @@ class TestCostEstimation:
         s = Summarizer(config, db)
 
         cost = s._estimate_cost(1000, 1000)
-        cc = config.llm.cost_control
+        cc = config.llm.summarizer.cost_control
         expected = (1000 / 1000) * cc.input_cost_per_1k + (1000 / 1000) * cc.output_cost_per_1k
         assert cost == pytest.approx(expected)
 
@@ -332,8 +349,10 @@ class TestCostEstimation:
     def test_custom_rates(self, db):
         config = _make_config(
             llm=LLMConfig(
-                enabled=True,
-                cost_control=CostControl(input_cost_per_1k=0.01, output_cost_per_1k=0.03),
+                summarizer=SummarizerLLMConfig(
+                    enabled=True,
+                    cost_control=CostControl(input_cost_per_1k=0.01, output_cost_per_1k=0.03),
+                ),
             ),
         )
         s = Summarizer(config, db)
@@ -362,3 +381,147 @@ class TestClientInitialization:
         with patch.dict("sys.modules", {"openai": None}):
             with pytest.raises(RuntimeError, match="openai package not installed"):
                 _ = s.client
+
+
+class TestBuildMessages:
+    """Tests for _build_messages() — always tries full text."""
+
+    def test_uses_full_text_when_pdf_available(self, db):
+        config = _make_config()
+        s = Summarizer(config, db)
+        paper = _make_paper(pdf_url="https://arxiv.org/pdf/2401.00001.pdf")
+
+        with patch("paperdigest.pdf.fetch_paper_text", return_value="Full paper text here..."):
+            messages = s._build_messages(paper)
+
+        assert "Full paper text here..." in messages[1]["content"]
+        assert "full text" in messages[0]["content"].lower()
+
+    def test_falls_back_to_abstract_when_pdf_extraction_fails(self, db):
+        config = _make_config()
+        s = Summarizer(config, db)
+        paper = _make_paper(pdf_url="https://arxiv.org/pdf/2401.00001.pdf")
+
+        with patch("paperdigest.pdf.fetch_paper_text", return_value=None):
+            messages = s._build_messages(paper)
+
+        assert "Abstract" in messages[1]["content"]
+        assert paper.abstract in messages[1]["content"]
+
+    def test_falls_back_to_abstract_when_no_pdf_url(self, db):
+        config = _make_config()
+        s = Summarizer(config, db)
+        paper = _make_paper()  # no pdf_url or oa_pdf_url
+
+        messages = s._build_messages(paper)
+
+        assert "Abstract" in messages[1]["content"]
+        assert paper.abstract in messages[1]["content"]
+
+    def test_prefers_oa_pdf_url(self, db):
+        config = _make_config()
+        s = Summarizer(config, db)
+        paper = _make_paper(
+            pdf_url="https://arxiv.org/pdf/2401.00001.pdf",
+            oa_pdf_url="https://openaccess.example.com/paper.pdf",
+        )
+
+        with patch("paperdigest.pdf.fetch_paper_text", return_value="OA text") as mock_fetch:
+            s._build_messages(paper)
+
+        mock_fetch.assert_called_once_with(
+            "https://openaccess.example.com/paper.pdf",
+            max_chars=config.llm.summarizer.max_text_chars,
+        )
+
+
+class TestRanking:
+    """Tests for rank_papers() LLM ranking."""
+
+    def test_rank_papers_returns_correct_ranking(self, db):
+        config = _make_config()
+        s = Summarizer(config, db)
+        s._client = MagicMock()
+
+        papers = [
+            _make_paper("2401.00001", "Paper A"),
+            _make_paper("2401.00002", "Paper B"),
+            _make_paper("2401.00003", "Paper C"),
+        ]
+        summaries = {
+            "2401.00001": Summary(one_liner="First paper"),
+            "2401.00002": Summary(one_liner="Second paper"),
+            "2401.00003": Summary(one_liner="Third paper"),
+        }
+        quality_scores = {
+            "2401.00001": 0.8,
+            "2401.00002": 0.6,
+            "2401.00003": 0.9,
+        }
+
+        ranking_json = json.dumps({"ranking": ["2401.00003", "2401.00001", "2401.00002"]})
+        s._client.chat.completions.create.return_value = _make_llm_response(ranking_json)
+
+        result = s.rank_papers(papers, summaries, quality_scores)
+
+        assert result == {"2401.00003": 1, "2401.00001": 2, "2401.00002": 3}
+
+    def test_fallback_ranking_on_llm_failure(self, db):
+        config = _make_config()
+        s = Summarizer(config, db)
+        s._client = MagicMock()
+        s._client.chat.completions.create.side_effect = RuntimeError("API down")
+
+        papers = [
+            _make_paper("2401.00001", "Paper A"),
+            _make_paper("2401.00002", "Paper B"),
+            _make_paper("2401.00003", "Paper C"),
+        ]
+        summaries = {
+            "2401.00001": Summary(one_liner="First paper"),
+            "2401.00002": Summary(one_liner="Second paper"),
+            "2401.00003": Summary(one_liner="Third paper"),
+        }
+        quality_scores = {
+            "2401.00001": 0.5,
+            "2401.00002": 0.9,
+            "2401.00003": 0.7,
+        }
+
+        result = s.rank_papers(papers, summaries, quality_scores)
+
+        # Fallback orders by quality score descending
+        assert result == {"2401.00002": 1, "2401.00003": 2, "2401.00001": 3}
+
+    def test_missing_papers_in_llm_response_appended(self, db):
+        config = _make_config()
+        s = Summarizer(config, db)
+        s._client = MagicMock()
+
+        papers = [
+            _make_paper("2401.00001", "Paper A"),
+            _make_paper("2401.00002", "Paper B"),
+            _make_paper("2401.00003", "Paper C"),
+        ]
+        summaries = {
+            "2401.00001": Summary(one_liner="First paper"),
+            "2401.00002": Summary(one_liner="Second paper"),
+            "2401.00003": Summary(one_liner="Third paper"),
+        }
+        quality_scores = {
+            "2401.00001": 0.8,
+            "2401.00002": 0.6,
+            "2401.00003": 0.9,
+        }
+
+        # LLM only returns 1 paper in ranking
+        ranking_json = json.dumps({"ranking": ["2401.00002"]})
+        s._client.chat.completions.create.return_value = _make_llm_response(ranking_json)
+
+        result = s.rank_papers(papers, summaries, quality_scores)
+
+        # 2401.00002 is rank 1 from LLM, remaining appended by quality score desc
+        assert result["2401.00002"] == 1
+        # The other two should be appended — 2401.00003 has higher quality (0.9) than 2401.00001 (0.8)
+        assert result["2401.00003"] == 2
+        assert result["2401.00001"] == 3
