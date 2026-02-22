@@ -9,3 +9,7 @@ config.yaml
 *.db
 **/.DS_Store
 dev/
+*.png
+usage_cache.json
+.playwright-mcp/
+.serena/
