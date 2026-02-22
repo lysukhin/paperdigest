@@ -97,6 +97,7 @@ python -m paperdigest [-v] <command> [options]
 | `init` | Create database, download PWC links | `--skip-pwc` |
 | `serve` | Start web dashboard (localhost:8000) | |
 | `stats` | Show DB and LLM usage statistics | |
+| `setup` | Interactive setup wizard (generates config.yaml, .env, Caddyfile, crontab) | |
 | `clean` | Clean old data | |
 
 ## Configuration
