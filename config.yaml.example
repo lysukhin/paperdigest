@@ -31,7 +31,7 @@ topic:
     - "cs.LG"
 
 collection:
-  lookback_days: 7
+  lookback_days: 3
   max_results: 200
   blogs:
     enabled: false
