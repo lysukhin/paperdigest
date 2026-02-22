@@ -326,6 +326,46 @@ class TestFilterPapers:
         assert stats["runs"] == 0
 
 
+class TestFilterProgress:
+    """Tests for progress parameter in filter_papers()."""
+
+    def test_progress_advance_called(self, db):
+        config = _make_config()
+        f = PaperFilter(config, db)
+        f._client = MagicMock()
+
+        resp_json = json.dumps({"relevant": True, "reason": "Relevant."})
+        f._client.chat.completions.create.return_value = _make_llm_response(resp_json)
+
+        papers = [
+            _make_paper("2401.00001"),
+            _make_paper("2401.00002"),
+            _make_paper("2401.00003"),
+        ]
+        for p in papers:
+            p.db_id = db.upsert_paper(p)
+
+        progress = MagicMock()
+        f.filter_papers(papers, progress=progress)
+
+        assert progress.advance.call_count == 3
+        assert progress.set_cost.call_count == 3
+
+    def test_no_progress_uses_logger(self, db):
+        config = _make_config()
+        f = PaperFilter(config, db)
+        f._client = MagicMock()
+
+        resp_json = json.dumps({"relevant": True, "reason": "Relevant."})
+        f._client.chat.completions.create.return_value = _make_llm_response(resp_json)
+
+        paper = _make_paper()
+        paper.db_id = db.upsert_paper(paper)
+
+        # Default progress=None should use logger (no error)
+        f.filter_papers([paper])
+
+
 class TestFilterBudget:
     """Tests for budget enforcement in filter."""
 

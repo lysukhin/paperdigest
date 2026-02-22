@@ -230,12 +230,16 @@ class Summarizer:
             logger.exception(f"LLM call failed for {paper.arxiv_id}")
             return None
 
-    def summarize_papers(self, papers: list[Paper]) -> dict[str, Summary]:
+    def summarize_papers(self, papers: list[Paper], progress=None) -> dict[str, Summary]:
         """Summarize multiple papers. Returns {arxiv_id: Summary}."""
         summaries: dict[str, Summary] = {}
 
         for i, paper in enumerate(papers):
-            logger.info(f"Summarizing [{i+1}/{len(papers)}] {paper.arxiv_id}")
+            if progress is not None:
+                progress.advance(1)
+                progress.set_cost(self.run_cost)
+            else:
+                logger.info(f"Summarizing [{i+1}/{len(papers)}] {paper.arxiv_id}")
             summary = self.summarize_paper(paper)
             if summary:
                 summaries[paper.arxiv_id] = summary

@@ -170,14 +170,18 @@ class PaperFilter:
             return FilterResult(paper=paper, relevant=True, reason="Filter failed: API error")
 
     def filter_papers(
-        self, papers: list[Paper]
+        self, papers: list[Paper], progress=None
     ) -> tuple[list[Paper], list[FilterResult]]:
         """Filter multiple papers. Returns (relevant_papers, rejected_results)."""
         relevant_papers: list[Paper] = []
         rejected_results: list[FilterResult] = []
 
         for i, paper in enumerate(papers):
-            logger.info(f"Filtering [{i+1}/{len(papers)}] {paper.arxiv_id}")
+            if progress is not None:
+                progress.advance(1)
+                progress.set_cost(self.run_cost)
+            else:
+                logger.info(f"Filtering [{i+1}/{len(papers)}] {paper.arxiv_id}")
             result = self.filter_paper(paper)
 
             # Store result in DB if paper has a db_id

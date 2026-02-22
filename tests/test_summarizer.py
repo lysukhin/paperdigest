@@ -328,6 +328,33 @@ class TestSummarizeMultiple:
         assert stats["runs"] == 0
 
 
+class TestSummarizeProgress:
+    """Tests for progress parameter in summarize_papers()."""
+
+    def test_progress_advance_called(self, db):
+        config = _make_config()
+        s = Summarizer(config, db)
+        s._client = MagicMock()
+        s._client.chat.completions.create.return_value = _make_llm_response(VALID_SUMMARY_JSON)
+
+        papers = [_make_paper(f"2401.0000{i}") for i in range(3)]
+
+        progress = MagicMock()
+        s.summarize_papers(papers, progress=progress)
+
+        assert progress.advance.call_count == 3
+        assert progress.set_cost.call_count == 3
+
+    def test_no_progress_uses_logger(self, db):
+        config = _make_config()
+        s = Summarizer(config, db)
+        s._client = MagicMock()
+        s._client.chat.completions.create.return_value = _make_llm_response(VALID_SUMMARY_JSON)
+
+        # Default progress=None should use logger (no error)
+        s.summarize_papers([_make_paper()])
+
+
 class TestCostEstimation:
     """Tests for _estimate_cost()."""
 
