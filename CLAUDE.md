@@ -63,10 +63,10 @@ arXiv + Blogs + DBLP → Dedup → SQLite → LLM Filter → Semantic Scholar + 
   - `waymo.py` — Waymo Research page scraper, extracts arXiv IDs from links
   - `wayve.py` — Wayve Science scraper (currently blocked by WAF, disabled in config)
   - `dblp.py` — DBLP conference proceedings search; covers CVPR, ICRA, IROS, ECCV, IV, ITSC, etc. (NeurIPS excluded — triggers DBLP API 500)
-- **web.py** — FastAPI read-only web dashboard with digest archive and digest viewer; renders markdown digests to HTML (uses `md_in_html` extension for `<details>` blocks)
+- **web.py** — FastAPI read-only web dashboard with digest archive and digest viewer; renders markdown digests to HTML (uses `md_in_html` extension for `<details>` blocks); `WebConfig.public_url` used by Telegram for digest links
 - **usage.py** — fetches real OpenAI token usage and USD costs via Admin API (`/v1/organization/usage/completions` + `/v1/organization/costs`); requires `OPENAI_ADMIN_KEY`
 - **enrichment/** — `semantic_scholar.py` (citations, h-index, venue, OA PDF) and `pwc.py` (code links via local JSON dump)
-- **delivery/** — `markdown.py` (sandboxed Jinja2 template at `templates/digest.md.j2`) and `telegram.py` (raw HTTP, MarkdownV2, 4096 char limit)
+- **delivery/** — `markdown.py` (sandboxed Jinja2 template at `templates/digest.md.j2`) and `telegram.py` (raw HTTP, MarkdownV2, compact top-5 format with inline keyboard button linking to web digest)
 
 ### Key Design Decisions
 
@@ -79,6 +79,7 @@ arXiv + Blogs + DBLP → Dedup → SQLite → LLM Filter → Semantic Scholar + 
 - **Local PWC lookup** — downloads full JSON dump once (`init`), then does instant local lookups instead of per-paper API calls
 - **Scoring is configurable** — quality weights, venue tiers in `config.yaml`
 - **Individual API failures don't break the pipeline** — enrichment and summarization handle errors per-paper gracefully
+- **Telegram as notification channel** — compact top-5 digest with inline keyboard button linking to full web digest; falls back to text link if Telegram rejects the button URL (e.g. non-public URLs); `web.public_url` controls the link target
 
 ### Database
 
@@ -90,12 +91,13 @@ SQLite at `data/papers.db`. Key tables:
 
 ### Test Structure
 
-Unit tests across 5 files — all with no external API calls:
-- `test_config.py` — config loading, validation, defaults, error cases, weight validation
+Unit tests across 6 files — all with no external API calls:
+- `test_config.py` — config loading, validation, defaults, error cases, weight validation, `public_url` parsing
 - `test_dedup.py` — title normalization, fuzzy matching, ID/DOI/title dedup (batch + DB)
 - `test_scoring.py` — quality scoring with `pytest.approx`, freshness decay, ranking
 - `test_filter.py` — LLM filter with mocked OpenAI client, fail-open behavior, budget enforcement, cost tracking
 - `test_summarizer.py` — LLM summarization with mocked OpenAI client, budget enforcement, cost tracking, ranking, error handling
+- `test_telegram.py` — Telegram message formatting (compact top-5), inline button presence/absence, text link fallback, error handling
 
 ### Docs
 
@@ -130,3 +132,4 @@ Copy `.env.example` to `.env` and fill in values. The `.env` file is loaded auto
 - LLM config supports `null` temperature and `max_completion_tokens` — omitted from API call when null (required for reasoning models like gpt-5-nano)
 - Filter has `filter_` prefix on `run_id` for cost tracking separation
 - `Scores.llm_rank` — 1 = best, 0 = unranked
+- Telegram inline button requires public HTTPS URL; `http://127.0.0.1` works for local dev, `localhost` does not (Telegram client limitation)

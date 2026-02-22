@@ -132,3 +132,6 @@ database:
 
 pwc:
   links_path: "data/pwc_links.json"
+
+web:
+  # public_url: https://digest.example.com  # enables "View Full Digest" button in Telegram

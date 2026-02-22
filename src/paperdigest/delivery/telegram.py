@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 
 import requests
@@ -13,6 +14,7 @@ logger = logging.getLogger(__name__)
 
 TELEGRAM_API = "https://api.telegram.org/bot{token}/sendMessage"
 MAX_MESSAGE_LENGTH = 4096
+TOP_N_TELEGRAM = 5
 
 
 def _escape_markdown(text: str) -> str:
@@ -23,23 +25,23 @@ def _escape_markdown(text: str) -> str:
 
 
 def _format_telegram_message(digest: Digest, config: Config) -> str:
-    """Format digest as a Telegram-friendly message (Markdown)."""
+    """Format digest as a compact Telegram message (MarkdownV2)."""
+    topic = _escape_markdown(digest.topic_name)
+    date_str = _escape_markdown(digest.date.strftime("%Y-%m-%d"))
+    n_ranked = len(digest.entries)
+
     lines = [
-        f"*Paper Digest: {_escape_markdown(digest.topic_name)}*",
-        f"_{digest.date.strftime('%Y-%m-%d')}_ | {digest.total_collected} collected, {len(digest.entries)} ranked\n",
+        f"*Paper Digest: {topic}*",
+        f"_{date_str}_ \\| {digest.total_collected} collected, {n_ranked} ranked",
+        "",
     ]
 
-    for entry in digest.entries[:10]:  # Telegram messages have length limits
-        p = entry.paper
-        s = entry.scores
-        escaped_title = _escape_markdown(p.title[:80])
-        line = f"*{entry.rank}\\.* [{escaped_title}](https://arxiv.org/abs/{p.arxiv_id})"
-        line += f"\n   Quality: {s.quality:.2f} | Cites: {p.citations or 0}"
-        if p.code_url:
-            line += f" | [Code]({p.code_url})"
+    for entry in digest.entries[:TOP_N_TELEGRAM]:
+        title = _escape_markdown(entry.paper.title[:80])
+        lines.append(f"*{entry.rank}\\.*  {title}")
         if entry.summary and entry.summary.one_liner:
-            line += f"\n   _{_escape_markdown(entry.summary.one_liner)}_"
-        lines.append(line)
+            one_liner = _escape_markdown(entry.summary.one_liner)
+            lines.append(f"  _\\> {one_liner}_")
 
     return "\n".join(lines)
 
@@ -57,24 +59,47 @@ def deliver_telegram(digest: Digest, config: Config) -> bool:
 
     # Truncate if too long
     if len(message) > MAX_MESSAGE_LENGTH:
-        message = message[: MAX_MESSAGE_LENGTH - 20] + "\n\n_...truncated_"
+        message = message[: MAX_MESSAGE_LENGTH - 20] + "\n\n_\\.\\.\\.truncated_"
 
     url = TELEGRAM_API.format(token=token)
+    payload: dict = {
+        "chat_id": chat_id,
+        "text": message,
+        "parse_mode": "MarkdownV2",
+        "disable_web_page_preview": True,
+    }
+
+    # Add inline button linking to web digest
+    digest_url = None
+    public_url = config.web.public_url
+    if public_url:
+        date_str = digest.date.strftime("%Y-%m-%d")
+        digest_url = f"{public_url}/digest/{date_str}"
+        payload["reply_markup"] = json.dumps({
+            "inline_keyboard": [[
+                {"text": "\U0001f4d6 View Full Digest", "url": digest_url}
+            ]]
+        })
+
     try:
-        resp = requests.post(
-            url,
-            json={
-                "chat_id": chat_id,
-                "text": message,
-                "parse_mode": "MarkdownV2",
-                "disable_web_page_preview": True,
-            },
-            timeout=10,
-        )
+        resp = requests.post(url, json=payload, timeout=10)
         resp.raise_for_status()
         logger.info("Telegram message sent successfully")
         return True
     except requests.RequestException as e:
+        # If the inline button URL was rejected (e.g. localhost), retry with a text link
+        if digest_url and "reply_markup" in payload and hasattr(e, "response") and getattr(e.response, "status_code", None) == 400:
+            logger.warning("Inline button rejected by Telegram, falling back to text link")
+            del payload["reply_markup"]
+            safe_url = digest_url.replace("\\", "\\\\").replace(")", "\\)")
+            payload["text"] = message + f"\n\n[\\> View Full Digest]({safe_url})"
+            try:
+                resp2 = requests.post(url, json=payload, timeout=10)
+                resp2.raise_for_status()
+                logger.info("Telegram message sent with text link fallback")
+                return True
+            except requests.RequestException:
+                pass
         sanitized = str(e).replace(token, "<REDACTED>")
         logger.error(f"Failed to send Telegram message: {sanitized}")
         return False

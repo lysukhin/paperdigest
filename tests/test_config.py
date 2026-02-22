@@ -258,6 +258,47 @@ class TestSplitLLMConfig:
         assert config.llm.summarizer.cost_control.max_cost_per_run == 1.50
 
 
+class TestWebConfig:
+    def test_web_public_url_default_none(self, tmp_path):
+        """public_url defaults to None when not set."""
+        path = _write_config(tmp_path, {
+            "topic": {
+                "name": "Test",
+                "primary_keywords": ["test"],
+            }
+        })
+        config = load_config(path)
+        assert config.web.public_url is None
+
+    def test_web_public_url_loaded(self, tmp_path):
+        """public_url is loaded from config."""
+        path = _write_config(tmp_path, {
+            "topic": {
+                "name": "Test",
+                "primary_keywords": ["test"],
+            },
+            "web": {
+                "public_url": "https://digest.example.com",
+            },
+        })
+        config = load_config(path)
+        assert config.web.public_url == "https://digest.example.com"
+
+    def test_web_public_url_strips_trailing_slash(self, tmp_path):
+        """public_url has trailing slash stripped."""
+        path = _write_config(tmp_path, {
+            "topic": {
+                "name": "Test",
+                "primary_keywords": ["test"],
+            },
+            "web": {
+                "public_url": "https://digest.example.com/",
+            },
+        })
+        config = load_config(path)
+        assert config.web.public_url == "https://digest.example.com"
+
+
 class TestScoringWithoutAlpha:
     def test_scoring_has_no_alpha(self, tmp_path):
         """ScoringConfig no longer has alpha field."""
