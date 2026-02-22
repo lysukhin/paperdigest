@@ -492,11 +492,6 @@ def cmd_stats(args):
 
         if config.llm.filter.enabled or config.llm.summarizer.enabled:
             stats = db.get_llm_stats()
-            monthly_budget = (
-                config.llm.filter.cost_control.max_cost_per_month
-                + config.llm.summarizer.cost_control.max_cost_per_month
-            )
-            remaining = monthly_budget - stats["total_cost_usd"]
 
             llm_table = Table(title=f"LLM Usage ({stats['month']})", show_header=False, border_style="dim")
             llm_table.add_column(style="bold")
@@ -504,11 +499,32 @@ def cmd_stats(args):
             llm_table.add_row("Runs", str(stats["runs"]))
             llm_table.add_row("Papers summarized", str(stats["total_papers_summarized"]))
             llm_table.add_row("Total tokens", f"{stats['total_input_tokens']} in / {stats['total_output_tokens']} out")
-            llm_table.add_row("Month cost", f"${stats['total_cost_usd']:.4f}")
-            llm_table.add_row("Budget remaining", f"${remaining:.2f} / ${monthly_budget:.2f}")
-            llm_table.add_row("Avg cost/run", f"${stats['avg_cost_per_run']:.4f}")
-            llm_table.add_row("Avg cost/paper", f"${stats['avg_cost_per_paper']:.4f}")
             console.print(llm_table)
+
+    if config.openai_admin_key:
+        from .usage import fetch_openai_usage
+
+        usage = fetch_openai_usage(config.openai_admin_key)
+        if usage:
+            oai_table = Table(
+                title=f"OpenAI Account ({usage['month']})",
+                show_header=False,
+                border_style="dim",
+            )
+            oai_table.add_column(style="bold")
+            oai_table.add_column(justify="right")
+            oai_table.add_row("Cost", f"${usage['total_cost_usd']:.4f}")
+            oai_table.add_row(
+                "Tokens",
+                f"{usage['total_input_tokens']:,} in / {usage['total_output_tokens']:,} out",
+            )
+            oai_table.add_row("Requests", f"{usage['total_requests']:,}")
+            for model, m in sorted(usage["by_model"].items()):
+                oai_table.add_row(
+                    f"  {model}",
+                    f"{m['input']:,} in / {m['output']:,} out / {m['requests']:,} req",
+                )
+            console.print(oai_table)
 
 
 def main(argv: list[str] | None = None):

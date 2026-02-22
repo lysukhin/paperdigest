@@ -88,6 +88,44 @@
         color: var(--text-muted);
     }
 
+    .usage-section {
+        margin-bottom: 32px;
+        padding: 12px 0;
+        border-bottom: 1px solid var(--border);
+    }
+
+    .usage-section .section-title {
+        margin-bottom: 10px;
+    }
+
+    .usage-row {
+        display: flex;
+        gap: 24px;
+        flex-wrap: wrap;
+        margin-bottom: 6px;
+    }
+
+    .usage-item {
+        font-family: var(--font-mono);
+        font-size: 0.75rem;
+        color: var(--text-secondary);
+    }
+
+    .usage-item strong {
+        color: var(--text);
+    }
+
+    .usage-models {
+        margin-top: 8px;
+    }
+
+    .usage-model {
+        font-family: var(--font-mono);
+        font-size: 0.6875rem;
+        color: var(--text-muted);
+        line-height: 1.8;
+    }
+
     .empty-state {
         padding: 64px 0;
         text-align: center;
@@ -115,6 +153,24 @@
         <span class="stat-label">digests</span>
     </div>
 </div>
+
+{% if stats.openai_usage %}
+<div class="usage-section">
+    <h2 class="section-title">OpenAI usage — {{ stats.openai_usage.month }}</h2>
+    <div class="usage-row">
+        <span class="usage-item"><strong>${{ "%.4f"|format(stats.openai_usage.total_cost_usd) }}</strong> spent</span>
+        <span class="usage-item"><strong>{{ "{:,}".format(stats.openai_usage.total_input_tokens) }}</strong> in / <strong>{{ "{:,}".format(stats.openai_usage.total_output_tokens) }}</strong> out</span>
+        <span class="usage-item"><strong>{{ "{:,}".format(stats.openai_usage.total_requests) }}</strong> requests</span>
+    </div>
+    {% if stats.openai_usage.by_model %}
+    <div class="usage-models">
+        {% for model, m in stats.openai_usage.by_model|dictsort %}
+        <div class="usage-model">{{ model }}: {{ "{:,}".format(m.input) }} in / {{ "{:,}".format(m.output) }} out / {{ "{:,}".format(m.requests) }} req</div>
+        {% endfor %}
+    </div>
+    {% endif %}
+</div>
+{% endif %}
 
 <h2 class="section-title">Past digests</h2>
 

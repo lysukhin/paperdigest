@@ -156,6 +156,10 @@ class Config:
         return os.environ.get("LLM_API_KEY")
 
     @property
+    def openai_admin_key(self) -> str | None:
+        return os.environ.get("OPENAI_ADMIN_KEY")
+
+    @property
     def semantic_scholar_api_key(self) -> str | None:
         return os.environ.get("SEMANTIC_SCHOLAR_API_KEY")
 

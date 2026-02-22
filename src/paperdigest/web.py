@@ -135,6 +135,17 @@ def _get_stats(config: Config) -> dict:
             stats["digests"] = db.get_digest_count()
     except Exception:
         logger.debug("Could not read DB stats", exc_info=True)
+
+    if config.openai_admin_key:
+        try:
+            from .usage import fetch_openai_usage
+
+            usage = fetch_openai_usage(config.openai_admin_key)
+            if usage:
+                stats["openai_usage"] = usage
+        except Exception:
+            logger.debug("Could not fetch OpenAI usage", exc_info=True)
+
     return stats
 
 
