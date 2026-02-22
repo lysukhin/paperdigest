@@ -300,19 +300,27 @@ def run_setup(base_dir: Path) -> None:
 
     # Patch config with deployment-specific settings
     with open(config_path) as fh:
-        data = yaml.safe_load(fh)
+        data = yaml.safe_load(fh) or {}
     changed = False
     if enable_telegram and telegram_bot_token:
-        data.setdefault("delivery", {}).setdefault("telegram", {})["enabled"] = True
+        if not data.get("delivery"):
+            data["delivery"] = {}
+        if not data["delivery"].get("telegram"):
+            data["delivery"]["telegram"] = {}
+        data["delivery"]["telegram"]["enabled"] = True
         changed = True
     if domain:
+        if not data.get("web"):
+            data["web"] = {}
         if _is_ip_address(domain):
-            data.setdefault("web", {})["public_url"] = f"http://{domain}:38080"
+            data["web"]["public_url"] = f"http://{domain}:38080"
         else:
-            data.setdefault("web", {})["public_url"] = f"https://{domain}:38443"
+            data["web"]["public_url"] = f"https://{domain}:38443"
         changed = True
     if use_example:
-        data.setdefault("web", {})["host"] = "0.0.0.0"
+        if not data.get("web"):
+            data["web"] = {}
+        data["web"]["host"] = "0.0.0.0"
         changed = True
     if changed:
         with open(config_path, "w") as fh:
