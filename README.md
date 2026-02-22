@@ -58,6 +58,12 @@ This gives you:
 
 See `docker compose logs -f` to watch progress.
 
+To run a digest manually (outside the cron schedule):
+
+```bash
+docker compose run --rm cron paperdigest run --config /app/config.yaml
+```
+
 > **Tip:** If port 38080 is not reachable (firewall, VPN), use an SSH tunnel: `ssh -L 38080:localhost:38080 root@<your-ip>`, then open `http://localhost:38080`.
 
 ## Installation
