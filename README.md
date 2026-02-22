@@ -29,6 +29,28 @@ python -m paperdigest run
 
 Output lands in `data/digests/digest_YYYY-MM-DD.md`.
 
+## Deploy to VPS (Docker)
+
+Requires Docker and Docker Compose on your VPS.
+
+```bash
+# 1. Clone
+git clone https://github.com/lysukhin/paperdigest && cd paperdigest
+
+# 2. Run interactive setup (generates config.yaml, .env, Caddyfile, crontab)
+docker compose run --rm web paperdigest setup
+
+# 3. Start everything
+docker compose up -d
+```
+
+This gives you:
+- **Web dashboard** with auto-HTTPS (set your domain during setup)
+- **Scheduled digests** via cron (default: daily 9:00 UTC)
+- **Telegram notifications** (optional, configured during setup)
+
+See `docker compose logs -f` to watch progress.
+
 ## Installation
 
 Requires **Python 3.9+**.
