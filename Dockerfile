@@ -6,7 +6,7 @@ COPY pyproject.toml .
 COPY src/ src/
 
 RUN python -m venv /opt/venv \
-    && /opt/venv/bin/pip install --no-cache-dir -e ".[llm,web]"
+    && /opt/venv/bin/pip install --no-cache-dir ".[llm,web]"
 
 # === Runtime ===
 FROM python:3.11-slim
@@ -22,8 +22,6 @@ RUN apt-get update \
 
 WORKDIR /app
 COPY --from=builder /opt/venv /opt/venv
-COPY --from=builder /build/src /app/src
-COPY --from=builder /build/pyproject.toml /app/
 COPY config.yaml.example /app/config.yaml.example
 
 ENV PATH="/opt/venv/bin:$PATH" \
