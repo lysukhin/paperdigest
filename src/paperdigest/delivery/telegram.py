@@ -70,6 +70,7 @@ def deliver_telegram(digest: Digest, config: Config) -> bool:
     }
 
     # Add inline button linking to web digest
+    digest_url = None
     public_url = config.web.public_url
     if public_url:
         date_str = digest.date.strftime("%Y-%m-%d")
@@ -86,6 +87,19 @@ def deliver_telegram(digest: Digest, config: Config) -> bool:
         logger.info("Telegram message sent successfully")
         return True
     except requests.RequestException as e:
+        # If the inline button URL was rejected (e.g. localhost), retry with a text link
+        if digest_url and "reply_markup" in payload and hasattr(e, "response") and getattr(e.response, "status_code", None) == 400:
+            logger.warning("Inline button rejected by Telegram, falling back to text link")
+            del payload["reply_markup"]
+            safe_url = digest_url.replace("\\", "\\\\").replace(")", "\\)")
+            payload["text"] = message + f"\n\n[\\> View Full Digest]({safe_url})"
+            try:
+                resp2 = requests.post(url, json=payload, timeout=10)
+                resp2.raise_for_status()
+                logger.info("Telegram message sent with text link fallback")
+                return True
+            except requests.RequestException:
+                pass
         sanitized = str(e).replace(token, "<REDACTED>")
         logger.error(f"Failed to send Telegram message: {sanitized}")
         return False

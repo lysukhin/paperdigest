@@ -222,3 +222,28 @@ class TestTelegramDelivery:
                 markup = json.loads(payload["reply_markup"])
                 button_text = markup["inline_keyboard"][0][0]["text"]
                 assert "View Full Digest" in button_text
+
+    def test_falls_back_to_text_link_on_button_rejection(self):
+        """When Telegram rejects the inline button (e.g. localhost), retry with text link."""
+        digest = _make_digest(n_entries=1)
+        config = _make_config(public_url="http://localhost:8000")
+
+        # First call: 400 error (button rejected). Second call: 200 (text link fallback).
+        error_resp = MagicMock(status_code=400)
+        error = requests.HTTPError(response=error_resp)
+        ok_resp = MagicMock(status_code=200)
+        ok_resp.raise_for_status = MagicMock()
+
+        with patch.dict("os.environ", {"TELEGRAM_BOT_TOKEN": "fake-token", "TELEGRAM_CHAT_ID": "12345"}):
+            with patch("paperdigest.delivery.telegram.requests.post") as mock_post:
+                mock_post.side_effect = [error, ok_resp]
+
+                from paperdigest.delivery.telegram import deliver_telegram
+                result = deliver_telegram(digest, config)
+
+                assert result is True
+                assert mock_post.call_count == 2
+                # Second call should have no reply_markup but text link in message
+                second_payload = mock_post.call_args_list[1].kwargs.get("json") or mock_post.call_args_list[1][1].get("json")
+                assert "reply_markup" not in second_payload
+                assert "View Full Digest" in second_payload["text"]
