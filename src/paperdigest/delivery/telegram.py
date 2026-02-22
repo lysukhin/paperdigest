@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 
 import requests
@@ -58,20 +59,29 @@ def deliver_telegram(digest: Digest, config: Config) -> bool:
 
     # Truncate if too long
     if len(message) > MAX_MESSAGE_LENGTH:
-        message = message[: MAX_MESSAGE_LENGTH - 20] + "\n\n_...truncated_"
+        message = message[: MAX_MESSAGE_LENGTH - 20] + "\n\n_\\.\\.\\.truncated_"
 
     url = TELEGRAM_API.format(token=token)
+    payload: dict = {
+        "chat_id": chat_id,
+        "text": message,
+        "parse_mode": "MarkdownV2",
+        "disable_web_page_preview": True,
+    }
+
+    # Add inline button linking to web digest
+    public_url = config.web.public_url
+    if public_url:
+        date_str = digest.date.strftime("%Y-%m-%d")
+        digest_url = f"{public_url}/digest/{date_str}"
+        payload["reply_markup"] = json.dumps({
+            "inline_keyboard": [[
+                {"text": "\U0001f4d6 View Full Digest", "url": digest_url}
+            ]]
+        })
+
     try:
-        resp = requests.post(
-            url,
-            json={
-                "chat_id": chat_id,
-                "text": message,
-                "parse_mode": "MarkdownV2",
-                "disable_web_page_preview": True,
-            },
-            timeout=10,
-        )
+        resp = requests.post(url, json=payload, timeout=10)
         resp.raise_for_status()
         logger.info("Telegram message sent successfully")
         return True
