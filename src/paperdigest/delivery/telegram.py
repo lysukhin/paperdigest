@@ -34,7 +34,7 @@ def _format_telegram_message(digest: Digest, config: Config) -> str:
         s = entry.scores
         escaped_title = _escape_markdown(p.title[:80])
         line = f"*{entry.rank}\\.* [{escaped_title}](https://arxiv.org/abs/{p.arxiv_id})"
-        line += f"\n   Score: {s.final:.2f} | Cites: {p.citations or 0}"
+        line += f"\n   Quality: {s.quality:.2f} | Cites: {p.citations or 0}"
         if p.code_url:
             line += f" | [Code]({p.code_url})"
         if entry.summary and entry.summary.one_liner:
