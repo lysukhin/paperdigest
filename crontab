@@ -1,0 +1,2 @@
+# Run digest pipeline daily at 09:00 UTC
+0 9 * * * paperdigest run --config /app/config.yaml >> /app/data/cron.log 2>&1
