@@ -33,9 +33,8 @@ CREATE TABLE IF NOT EXISTS papers (
 
 CREATE TABLE IF NOT EXISTS scores (
     paper_id INTEGER PRIMARY KEY REFERENCES papers(id),
-    relevance REAL NOT NULL,
     quality REAL NOT NULL,
-    final REAL NOT NULL,
+    llm_rank INTEGER NOT NULL DEFAULT 0,
     scored_at TEXT DEFAULT (datetime('now'))
 );
 
@@ -58,9 +57,19 @@ CREATE TABLE IF NOT EXISTS llm_usage (
     created_at TEXT DEFAULT (datetime('now'))
 );
 
+CREATE TABLE IF NOT EXISTS paper_filter_results (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    paper_id INTEGER NOT NULL REFERENCES papers(id),
+    run_date TEXT NOT NULL,
+    relevant INTEGER NOT NULL,
+    reason TEXT NOT NULL DEFAULT '',
+    created_at TEXT DEFAULT (datetime('now'))
+);
+
 CREATE INDEX IF NOT EXISTS idx_papers_doi ON papers(doi);
-CREATE INDEX IF NOT EXISTS idx_scores_final ON scores(final DESC);
+CREATE INDEX IF NOT EXISTS idx_scores_final ON scores(llm_rank ASC, quality DESC);
 CREATE INDEX IF NOT EXISTS idx_llm_usage_date ON llm_usage(date);
+CREATE INDEX IF NOT EXISTS idx_filter_results_paper_date ON paper_filter_results(paper_id, run_date);
 """
 
 
@@ -81,6 +90,11 @@ class Database:
         return False
 
     def init_schema(self):
+        # Run migrations for existing databases before applying schema
+        # (old scores table would cause index creation to fail on new columns)
+        from .migrate import migrate_scores_table
+        migrate_scores_table(self.conn)
+
         self.conn.executescript(SCHEMA)
         self.conn.execute("PRAGMA foreign_keys=ON")
         self.conn.commit()
@@ -218,36 +232,68 @@ class Database:
 
     def upsert_scores(self, paper_id: int, scores: Scores):
         self.conn.execute(
-            """INSERT INTO scores (paper_id, relevance, quality, final, scored_at)
-            VALUES (?, ?, ?, ?, datetime('now'))
+            """INSERT INTO scores (paper_id, quality, llm_rank, scored_at)
+            VALUES (?, ?, ?, datetime('now'))
             ON CONFLICT(paper_id) DO UPDATE SET
-                relevance=excluded.relevance,
                 quality=excluded.quality,
-                final=excluded.final,
+                llm_rank=excluded.llm_rank,
                 scored_at=datetime('now')""",
-            (paper_id, scores.relevance, scores.quality, scores.final),
+            (paper_id, scores.quality, scores.llm_rank),
         )
         self.conn.commit()
 
     def get_top_scored_papers(self, limit: int = 20) -> list[tuple[Paper, Scores]]:
         rows = self.conn.execute(
-            """SELECT p.*, s.relevance, s.quality, s.final
+            """SELECT p.*, s.quality, s.llm_rank
             FROM papers p
             JOIN scores s ON p.id = s.paper_id
-            ORDER BY s.final DESC
+            ORDER BY s.llm_rank ASC, s.quality DESC
             LIMIT ?""",
             (limit,),
         ).fetchall()
         results = []
         for row in rows:
             paper = self._row_to_paper(row)
-            scores = Scores(
-                relevance=row["relevance"],
-                quality=row["quality"],
-                final=row["final"],
-            )
+            scores = Scores(quality=row["quality"], llm_rank=row["llm_rank"])
             results.append((paper, scores))
         return results
+
+    # --- Filter Results ---
+
+    def upsert_filter_result(self, paper_id: int, relevant: bool, reason: str):
+        """Store a filter result for a paper."""
+        self.conn.execute(
+            """INSERT INTO paper_filter_results (paper_id, run_date, relevant, reason)
+            VALUES (?, date('now'), ?, ?)""",
+            (paper_id, int(relevant), reason),
+        )
+        self.conn.commit()
+
+    def get_filter_results(self, run_date: str | None = None) -> list[dict]:
+        """Get all filter results, optionally for a specific date."""
+        if run_date:
+            rows = self.conn.execute(
+                "SELECT * FROM paper_filter_results WHERE run_date = ?", (run_date,)
+            ).fetchall()
+        else:
+            rows = self.conn.execute("SELECT * FROM paper_filter_results").fetchall()
+        return [dict(row) for row in rows]
+
+    def get_rejected_papers(self, run_date: str | None = None) -> list[tuple[Paper, str]]:
+        """Get papers that were rejected by the filter, with their reasons."""
+        query = """
+            SELECT p.*, fr.reason
+            FROM paper_filter_results fr
+            JOIN papers p ON fr.paper_id = p.id
+            WHERE fr.relevant = 0
+        """
+        params = ()
+        if run_date:
+            query += " AND fr.run_date = ?"
+            params = (run_date,)
+        query += " ORDER BY p.published DESC"
+        rows = self.conn.execute(query, params).fetchall()
+        return [(self._row_to_paper(row), row["reason"]) for row in rows]
 
     # --- Digests ---
 

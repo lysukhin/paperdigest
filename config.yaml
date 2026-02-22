@@ -1,9 +1,15 @@
 topic:
   name: "VLM/VLA for Autonomous Driving"
+  description: >
+    Papers about vision-language models (VLMs), vision-language-action models (VLAs),
+    and multimodal foundation models applied to autonomous driving, including end-to-end
+    driving, motion planning with language reasoning, and driving scene understanding.
+    Also interested in relevant benchmarks and datasets for evaluating these systems.
   primary_keywords:
     - "autonomous driving"
     - "motion planning"
     - "driving"
+    - "self-driving"
   secondary_keywords:
     - "end-to-end"
     - "vision-language model"
@@ -28,14 +34,14 @@ collection:
   lookback_days: 7
   max_results: 200
   blogs:
-    enabled: true
+    enabled: false
     sources:
       - nvidia
       - waymo
       # - wayve  # currently blocked by WAF (403)
   conferences:
-    enabled: true
-    years_back: 2       # covers current + 2 prior years (for biennial venues like ECCV/ICCV)
+    enabled: false
+    years_back: 2
     venues:
       - CVPR
       - ICCV
@@ -51,13 +57,6 @@ collection:
       # NeurIPS excluded — DBLP API returns 500 for this venue
 
 scoring:
-  alpha: 0.65
-  relevance:
-    primary_base: 0.5
-    secondary_increment: 0.1
-    secondary_cap: 0.3
-    benchmark_increment: 0.1
-    benchmark_cap: 0.2
   quality:
     w_venue: 0.25
     w_author: 0.20
@@ -97,19 +96,30 @@ digest:
   output_dir: "data/digests"
 
 llm:
-  enabled: true
-  model: "gpt-5-nano-2025-08-07"
-  base_url: "https://api.openai.com/v1"
-  temperature:       # null = use model default
-  max_completion_tokens: 16384
-  use_full_text: false  # false = use only abstracts
-  max_text_chars: 50000
-  cost_control:
-    max_cost_per_run: 0.50
-    max_cost_per_month: 10.00
-    warn_at_percent: 80
-    input_cost_per_1k: 0.00005
-    output_cost_per_1k: 0.0004
+  filter:
+    enabled: true
+    model: "gpt-5-nano-2025-08-07"
+    base_url: "https://api.openai.com/v1"
+    temperature:
+    max_completion_tokens: 1024
+    cost_control:
+      max_cost_per_run: 0.10
+      max_cost_per_month: 3.00
+      input_cost_per_1k: 0.00005
+      output_cost_per_1k: 0.0004
+  summarizer:
+    enabled: true
+    model: "gpt-5-mini-2025-08-07"
+    base_url: "https://api.openai.com/v1"
+    temperature:
+    max_completion_tokens: 16384
+    max_text_chars: 50000
+    language: "English"
+    cost_control:
+      max_cost_per_run: 0.50
+      max_cost_per_month: 10.00
+      input_cost_per_1k: 0.00025
+      output_cost_per_1k: 0.002
 
 delivery:
   markdown:

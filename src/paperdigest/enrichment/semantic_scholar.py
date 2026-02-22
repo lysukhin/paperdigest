@@ -91,7 +91,7 @@ def _request_with_backoff(
     return None
 
 
-def enrich_papers(papers: list[Paper], config: Config) -> list[Paper]:
+def enrich_papers(papers: list[Paper], config: Config, progress=None) -> list[Paper]:
     """Enrich a list of papers. Respects rate limits."""
     api_key = config.semantic_scholar_api_key
     delay = 0.5 if api_key else 3.5  # Unauthenticated: ~100 req/5min
@@ -101,7 +101,10 @@ def enrich_papers(papers: list[Paper], config: Config) -> list[Paper]:
 
     enriched = []
     for i, paper in enumerate(papers):
-        logger.info(f"Enriching [{i+1}/{len(papers)}] {paper.arxiv_id}")
+        if progress is not None:
+            progress.advance(1)
+        else:
+            logger.info(f"Enriching [{i+1}/{len(papers)}] {paper.arxiv_id}")
 
         # Circuit breaker: stop if too many consecutive rate limits
         if consecutive_429s >= max_consecutive_429s:
