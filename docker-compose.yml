@@ -1,0 +1,43 @@
+services:
+  web:
+    build: .
+    command: ["paperdigest", "serve", "--config", "/app/config.yaml"]
+    volumes:
+      - ./data:/app/data
+      - ./config.yaml:/app/config.yaml:ro
+      - ./.env:/app/.env:ro
+    env_file: .env
+    environment:
+      - NO_PROGRESS=1
+      - WEB_HOST=0.0.0.0
+    restart: unless-stopped
+    expose:
+      - "8000"
+
+  cron:
+    build: .
+    command: ["supercronic", "/app/crontab"]
+    volumes:
+      - ./data:/app/data
+      - ./config.yaml:/app/config.yaml:ro
+      - ./.env:/app/.env:ro
+      - ./crontab:/app/crontab:ro
+    env_file: .env
+    environment:
+      - NO_PROGRESS=1
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    restart: unless-stopped
+
+volumes:
+  caddy_data:
+  caddy_config:

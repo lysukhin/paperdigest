@@ -155,11 +155,13 @@ def _get_stats(config: Config) -> dict:
 
 
 def run_server(config: Config):
+    import os
+
     import uvicorn
 
     app = create_app(config)
-    host = config.web.host
-    port = config.web.port
+    host = os.environ.get("WEB_HOST", config.web.host)
+    port = int(os.environ.get("WEB_PORT", config.web.port))
 
     print(f"  paperdigest dashboard")
     print(f"  http://{host}:{port}")

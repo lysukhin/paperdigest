@@ -1,0 +1,4 @@
+# Replace :80 with your domain (e.g. digest.example.com) for auto-HTTPS
+:80 {
+    reverse_proxy web:8000
+}

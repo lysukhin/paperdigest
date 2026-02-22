@@ -457,6 +457,15 @@ def cmd_clean(args):
     console.print("Clean complete.", style="bold green")
 
 
+def cmd_setup(args):
+    """Interactive setup wizard."""
+    from .setup import run_setup
+
+    config_path = getattr(args, "config", "config.yaml")
+    base_dir = Path(config_path).parent.resolve() if config_path != "config.yaml" else Path.cwd()
+    run_setup(base_dir)
+
+
 def cmd_serve(args):
     """Start the web dashboard."""
     config = get_config(args)
@@ -583,6 +592,9 @@ def main(argv: list[str] | None = None):
     clean_parser.add_argument("--all", action="store_true", help="Remove everything (default if no flags)")
     clean_parser.add_argument("-y", "--yes", action="store_true", help="Skip confirmation prompt")
 
+    # setup
+    subparsers.add_parser("setup", parents=[common], help="Interactive setup wizard")
+
     # serve
     subparsers.add_parser("serve", parents=[common], help="Start web dashboard")
 
@@ -605,6 +617,7 @@ def main(argv: list[str] | None = None):
         "digest": cmd_digest,
         "init": cmd_init,
         "clean": cmd_clean,
+        "setup": cmd_setup,
         "serve": cmd_serve,
         "stats": cmd_stats,
     }
