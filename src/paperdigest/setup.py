@@ -202,15 +202,30 @@ def run_setup(base_dir: Path) -> None:
     """
     print("=== paperdigest setup wizard ===\n")
 
-    # --- Topic ---
-    topic_name = _prompt("Research topic name", "Autonomous Driving")
-    topic_description = _prompt(
-        "Topic description (for LLM filter)",
-        "Papers about autonomous driving and related topics",
-    )
-    primary_keywords = _prompt_list("Primary keywords (comma-separated)", "autonomous driving, self-driving")
-    arxiv_categories = _prompt_list("arXiv categories (comma-separated)", "cs.CV, cs.AI, cs.RO")
-    language = _prompt("Summary language", "English")
+    # --- Default config or custom ---
+    example_config = base_dir / "config.yaml.example"
+    config_path = base_dir / "config.yaml"
+    use_example = False
+    if example_config.exists():
+        use_example = _prompt_yn(
+            "Use config.yaml.example as config? (edit later for custom topic)", default=True
+        )
+
+    if use_example:
+        import shutil
+
+        shutil.copy2(example_config, config_path)
+        print("Copied config.yaml.example -> config.yaml\n")
+    else:
+        # --- Topic ---
+        topic_name = _prompt("Research topic name", "Autonomous Driving")
+        topic_description = _prompt(
+            "Topic description (for LLM filter)",
+            "Papers about autonomous driving and related topics",
+        )
+        primary_keywords = _prompt_list("Primary keywords (comma-separated)", "autonomous driving, self-driving")
+        arxiv_categories = _prompt_list("arXiv categories (comma-separated)", "cs.CV, cs.AI, cs.RO")
+        language = _prompt("Summary language", "English")
 
     # --- API keys ---
     print("\n--- API Keys ---")
@@ -253,23 +268,32 @@ def run_setup(base_dir: Path) -> None:
     # --- Generate files ---
     print("\n--- Generating files ---")
 
-    config_path = base_dir / "config.yaml"
-    generate_config(
-        config_path,
-        topic_name=topic_name,
-        topic_description=topic_description,
-        primary_keywords=primary_keywords,
-        arxiv_categories=arxiv_categories,
-        language=language,
-        domain=domain,
-    )
+    if not use_example:
+        generate_config(
+            config_path,
+            topic_name=topic_name,
+            topic_description=topic_description,
+            primary_keywords=primary_keywords,
+            arxiv_categories=arxiv_categories,
+            language=language,
+            domain=domain,
+        )
     print("  config.yaml")
 
-    # Enable Telegram in config if user opted in
+    # Patch config with deployment-specific settings
+    with open(config_path) as fh:
+        data = yaml.safe_load(fh)
+    changed = False
     if enable_telegram and telegram_bot_token:
-        with open(config_path) as fh:
-            data = yaml.safe_load(fh)
-        data["delivery"]["telegram"]["enabled"] = True
+        data.setdefault("delivery", {}).setdefault("telegram", {})["enabled"] = True
+        changed = True
+    if domain:
+        data.setdefault("web", {})["public_url"] = f"https://{domain}"
+        changed = True
+    if use_example:
+        data.setdefault("web", {})["host"] = "0.0.0.0"
+        changed = True
+    if changed:
         with open(config_path, "w") as fh:
             yaml.dump(data, fh, default_flow_style=False, sort_keys=False)
 
