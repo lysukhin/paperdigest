@@ -156,7 +156,7 @@ class TestSetupCrontab:
 
         content = path.read_text()
         assert "0 8 * * 1" in content
-        assert "paperdigest run --config /app/config.yaml" in content
+        assert "/opt/venv/bin/paperdigest run --config /app/config.yaml" in content
         assert ">> /app/data/cron.log 2>&1" in content
 
     def test_generate_crontab_custom(self, tmp_path):
@@ -166,4 +166,4 @@ class TestSetupCrontab:
 
         content = path.read_text()
         assert "30 14 * * *" in content
-        assert "paperdigest run --config /app/config.yaml" in content
+        assert "/opt/venv/bin/paperdigest run --config /app/config.yaml" in content

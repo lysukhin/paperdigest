@@ -300,7 +300,7 @@ def load_config(path: str | Path) -> Config:
     if abs(weight_sum - 1.0) > 0.01:
         raise ValueError(f"Quality weights must sum to 1.0, got {weight_sum:.4f}")
 
-    web_raw = raw.get("web", {})
+    web_raw = raw.get("web") or {}
 
     return Config(
         topic=_build_topic(raw["topic"]),

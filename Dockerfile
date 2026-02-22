@@ -11,14 +11,17 @@ RUN python -m venv /opt/venv \
 # === Runtime ===
 FROM python:3.11-slim
 
-# supercronic for container-friendly cron
-ARG SUPERCRONIC_URL=https://github.com/aptible/supercronic/releases/download/v0.2.33/supercronic-linux-amd64
-ARG SUPERCRONIC_SHA=71b0d58cc53f6bd72cf2f293e09e294b67c30571
+# supercronic for container-friendly cron + tini as PID 1 (auto-detect arch)
+ARG TARGETARCH
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends curl \
-    && curl -fsSL "$SUPERCRONIC_URL" -o /usr/local/bin/supercronic \
+    && apt-get install -y --no-install-recommends curl tini \
+    && SUPERCRONIC_ARCH=$(case "$TARGETARCH" in arm64) echo "linux-arm64" ;; *) echo "linux-amd64" ;; esac) \
+    && curl -fsSL "https://github.com/aptible/supercronic/releases/download/v0.2.33/supercronic-${SUPERCRONIC_ARCH}" \
+       -o /usr/local/bin/supercronic \
     && chmod +x /usr/local/bin/supercronic \
     && apt-get purge -y curl && apt-get autoremove -y && rm -rf /var/lib/apt/lists/*
+
+ENTRYPOINT ["tini", "--"]
 
 WORKDIR /app
 COPY --from=builder /opt/venv /opt/venv

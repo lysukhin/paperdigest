@@ -119,7 +119,7 @@ def generate_crontab(path: Path, *, schedule: str) -> None:
 
     Format: ``{schedule} paperdigest run --config /app/config.yaml >> /app/data/cron.log 2>&1``
     """
-    line = f"{schedule} paperdigest run --config /app/config.yaml >> /app/data/cron.log 2>&1\n"
+    line = f"{schedule} /opt/venv/bin/paperdigest run --config /app/config.yaml >> /app/data/cron.log 2>&1\n"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(line)
 

@@ -9,6 +9,7 @@ services:
     env_file: .env
     environment:
       - NO_PROGRESS=1
+      - WEB_HOST=0.0.0.0
     restart: unless-stopped
     expose:
       - "8000"
