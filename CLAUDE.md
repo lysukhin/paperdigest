@@ -35,7 +35,7 @@ python -m paperdigest digest --dry-run     # generate digest without delivering 
 python -m paperdigest serve                # start web dashboard (localhost:8000)
 python -m paperdigest stats                # show DB and LLM usage statistics
 python -m paperdigest -v <subcommand>      # verbose/debug logging
-./wc run                                   # shorthand wrapper for python -m paperdigest
+./pd run                                   # shorthand wrapper for python -m paperdigest
 ```
 
 ## Architecture

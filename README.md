@@ -52,6 +52,7 @@ All commands accept `--config <path>` (default: `config.yaml`). Global `-v` flag
 
 ```
 python -m paperdigest [-v] <command> [options]
+./pd <command>                                    # shorthand wrapper
 ```
 
 | Command | Description | Key Flags |
