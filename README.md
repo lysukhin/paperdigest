@@ -29,12 +29,6 @@ python -m paperdigest run
 
 Output lands in `data/digests/digest_YYYY-MM-DD.md`.
 
-### Cron Setup
-
-```bash
-0 8 * * * cd /path/to/whatscooking && python -m paperdigest run
-```
-
 ## Installation
 
 Requires **Python 3.9+**.
@@ -105,6 +99,20 @@ See **[docs/scoring.md](docs/scoring.md)** for formulas, enrichment sources, and
 pip install -e ".[dev]"
 python -m pytest tests/ -v
 ```
+
+## Scheduled Runs (Cron)
+
+To run digests daily, add a crontab entry:
+
+```bash
+# Run daily at 9:00 AM
+0 9 * * * /path/to/venv/bin/python -m paperdigest run --config /path/to/config.yaml >> /path/to/data/cron.log 2>&1
+```
+
+Notes:
+- Use the full path to your virtualenv's Python to ensure correct dependencies
+- The `--config` flag accepts an absolute path to your config file
+- `.env` must be in the same directory as `config.yaml`
 
 ## Roadmap
 

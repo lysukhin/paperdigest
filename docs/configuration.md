@@ -121,6 +121,17 @@ delivery:
     enabled: false           # Set true + env vars to enable
 ```
 
+## Web Dashboard
+
+```yaml
+web:
+  # public_url: https://digest.example.com
+```
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `public_url` | *(none)* | Public URL of your web dashboard. When set, Telegram messages include a "View Full Digest" inline button linking to the digest on the web. |
+
 ## Database & PWC
 
 ```yaml
