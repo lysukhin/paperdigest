@@ -9,6 +9,7 @@ topic:
     - "autonomous driving"
     - "motion planning"
     - "driving"
+    - "self-driving"
   secondary_keywords:
     - "end-to-end"
     - "vision-language model"
@@ -39,7 +40,7 @@ collection:
       - waymo
       # - wayve  # currently blocked by WAF (403)
   conferences:
-    enabled: true
+    enabled: false
     years_back: 2
     venues:
       - CVPR
@@ -97,18 +98,18 @@ digest:
 llm:
   filter:
     enabled: true
-    model: "gpt-4o-mini"
+    model: "gpt-5-nano-2025-08-07"
     base_url: "https://api.openai.com/v1"
     temperature:
-    max_completion_tokens: 256
+    max_completion_tokens: 1024
     cost_control:
       max_cost_per_run: 0.10
       max_cost_per_month: 3.00
-      input_cost_per_1k: 0.00015
-      output_cost_per_1k: 0.0006
+      input_cost_per_1k: 0.00005
+      output_cost_per_1k: 0.0004
   summarizer:
     enabled: true
-    model: "gpt-5-nano-2025-08-07"
+    model: "gpt-5-mini-2025-08-07"
     base_url: "https://api.openai.com/v1"
     temperature:
     max_completion_tokens: 16384
@@ -116,8 +117,8 @@ llm:
     cost_control:
       max_cost_per_run: 0.50
       max_cost_per_month: 10.00
-      input_cost_per_1k: 0.00005
-      output_cost_per_1k: 0.0004
+      input_cost_per_1k: 0.00025
+      output_cost_per_1k: 0.002
 
 delivery:
   markdown:
