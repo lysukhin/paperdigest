@@ -23,6 +23,8 @@ arXiv + Blogs + DBLP → Dedup → SQLite → LLM Filter → Semantic Scholar + 
 
 ```bash
 pip install -e .
+cp config.yaml.example config.yaml   # edit for your topic
+cp .env.example .env                  # add API keys
 python -m paperdigest init --skip-pwc
 python -m paperdigest run
 ```
