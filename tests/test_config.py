@@ -25,10 +25,10 @@ class TestConfigLoading:
         config = load_config(path)
         assert config.topic.name == "Test Topic"
         assert config.topic.primary_keywords == ["keyword one"]
-        assert config.scoring.alpha == 0.65  # default
+        assert config.topic.description == ""  # default
 
     def test_missing_topic_raises(self, tmp_path):
-        path = _write_config(tmp_path, {"scoring": {"alpha": 0.5}})
+        path = _write_config(tmp_path, {"scoring": {}})
         with pytest.raises(ValueError, match="topic"):
             load_config(path)
 
@@ -55,7 +55,6 @@ class TestConfigLoading:
                 "primary_keywords": ["test"],
             },
             "scoring": {
-                "alpha": 0.8,
                 "quality": {
                     "w_venue": 0.30,
                     "w_author": 0.20,
@@ -66,8 +65,9 @@ class TestConfigLoading:
             },
         })
         config = load_config(path)
-        assert config.scoring.alpha == 0.8
         assert config.scoring.quality.w_venue == 0.30
+        assert not hasattr(config.scoring, "alpha")
+        assert not hasattr(config.scoring, "relevance")
 
     def test_llm_defaults_disabled(self, tmp_path):
         path = _write_config(tmp_path, {
@@ -77,7 +77,8 @@ class TestConfigLoading:
             },
         })
         config = load_config(path)
-        assert config.llm.enabled is False
+        assert config.llm.filter.enabled is False
+        assert config.llm.summarizer.enabled is False
 
     def test_llm_cost_control(self, tmp_path):
         path = _write_config(tmp_path, {
@@ -86,29 +87,20 @@ class TestConfigLoading:
                 "primary_keywords": ["test"],
             },
             "llm": {
-                "enabled": True,
-                "model": "gpt-4o-mini",
-                "cost_control": {
-                    "max_cost_per_run": 1.0,
-                    "max_cost_per_month": 20.0,
+                "summarizer": {
+                    "enabled": True,
+                    "model": "gpt-5-nano-2025-08-07",
+                    "cost_control": {
+                        "max_cost_per_run": 1.0,
+                        "max_cost_per_month": 20.0,
+                    },
                 },
             },
         })
         config = load_config(path)
-        assert config.llm.enabled is True
-        assert config.llm.cost_control.max_cost_per_run == 1.0
-        assert config.llm.cost_control.max_cost_per_month == 20.0
-
-    def test_invalid_alpha_raises(self, tmp_path):
-        path = _write_config(tmp_path, {
-            "topic": {
-                "name": "Test",
-                "primary_keywords": ["test"],
-            },
-            "scoring": {"alpha": 1.5},
-        })
-        with pytest.raises(ValueError, match="alpha"):
-            load_config(path)
+        assert config.llm.summarizer.enabled is True
+        assert config.llm.summarizer.cost_control.max_cost_per_run == 1.0
+        assert config.llm.summarizer.cost_control.max_cost_per_month == 20.0
 
     def test_invalid_quality_weights_raises(self, tmp_path):
         path = _write_config(tmp_path, {
@@ -122,3 +114,187 @@ class TestConfigLoading:
         })
         with pytest.raises(ValueError, match="Quality weights"):
             load_config(path)
+
+
+class TestTopicDescription:
+    def test_topic_description_default(self, tmp_path):
+        """topic.description defaults to empty string."""
+        path = _write_config(tmp_path, {
+            "topic": {
+                "name": "Test",
+                "primary_keywords": ["test"],
+            }
+        })
+        config = load_config(path)
+        assert config.topic.description == ""
+
+    def test_topic_description_loaded(self, tmp_path):
+        """topic.description is loaded from config."""
+        path = _write_config(tmp_path, {
+            "topic": {
+                "name": "Autonomous Driving",
+                "primary_keywords": ["self-driving"],
+                "description": "Vision-language models for autonomous driving",
+            }
+        })
+        config = load_config(path)
+        assert config.topic.description == "Vision-language models for autonomous driving"
+
+
+class TestSplitLLMConfig:
+    def test_filter_defaults(self, tmp_path):
+        """Filter LLM config has correct defaults."""
+        path = _write_config(tmp_path, {
+            "topic": {
+                "name": "Test",
+                "primary_keywords": ["test"],
+            }
+        })
+        config = load_config(path)
+        assert config.llm.filter.enabled is False
+        assert config.llm.filter.model == "gpt-4o-mini"
+        assert config.llm.filter.base_url == "https://api.openai.com/v1"
+        assert config.llm.filter.temperature is None
+        assert config.llm.filter.max_completion_tokens == 256
+
+    def test_summarizer_defaults(self, tmp_path):
+        """Summarizer LLM config has correct defaults."""
+        path = _write_config(tmp_path, {
+            "topic": {
+                "name": "Test",
+                "primary_keywords": ["test"],
+            }
+        })
+        config = load_config(path)
+        assert config.llm.summarizer.enabled is False
+        assert config.llm.summarizer.model == "gpt-5-nano-2025-08-07"
+        assert config.llm.summarizer.base_url == "https://api.openai.com/v1"
+        assert config.llm.summarizer.temperature is None
+        assert config.llm.summarizer.max_completion_tokens == 16384
+        assert config.llm.summarizer.max_text_chars == 50000
+
+    def test_filter_custom_config(self, tmp_path):
+        """Filter LLM config can be customized."""
+        path = _write_config(tmp_path, {
+            "topic": {
+                "name": "Test",
+                "primary_keywords": ["test"],
+            },
+            "llm": {
+                "filter": {
+                    "enabled": True,
+                    "model": "gpt-4o",
+                    "temperature": 0.2,
+                    "max_completion_tokens": 512,
+                    "cost_control": {
+                        "max_cost_per_run": 0.25,
+                        "max_cost_per_month": 5.0,
+                    },
+                },
+            },
+        })
+        config = load_config(path)
+        assert config.llm.filter.enabled is True
+        assert config.llm.filter.model == "gpt-4o"
+        assert config.llm.filter.temperature == 0.2
+        assert config.llm.filter.max_completion_tokens == 512
+        assert config.llm.filter.cost_control.max_cost_per_run == 0.25
+        assert config.llm.filter.cost_control.max_cost_per_month == 5.0
+
+    def test_summarizer_custom_config(self, tmp_path):
+        """Summarizer LLM config can be customized."""
+        path = _write_config(tmp_path, {
+            "topic": {
+                "name": "Test",
+                "primary_keywords": ["test"],
+            },
+            "llm": {
+                "summarizer": {
+                    "enabled": True,
+                    "model": "gpt-4o",
+                    "max_text_chars": 30000,
+                    "cost_control": {
+                        "max_cost_per_run": 2.0,
+                    },
+                },
+            },
+        })
+        config = load_config(path)
+        assert config.llm.summarizer.enabled is True
+        assert config.llm.summarizer.model == "gpt-4o"
+        assert config.llm.summarizer.max_text_chars == 30000
+        assert config.llm.summarizer.cost_control.max_cost_per_run == 2.0
+
+    def test_independent_filter_and_summarizer(self, tmp_path):
+        """Filter and summarizer have independent configs."""
+        path = _write_config(tmp_path, {
+            "topic": {
+                "name": "Test",
+                "primary_keywords": ["test"],
+            },
+            "llm": {
+                "filter": {
+                    "enabled": True,
+                    "model": "gpt-4o-mini",
+                    "cost_control": {
+                        "max_cost_per_run": 0.10,
+                    },
+                },
+                "summarizer": {
+                    "enabled": True,
+                    "model": "gpt-5-nano-2025-08-07",
+                    "cost_control": {
+                        "max_cost_per_run": 1.50,
+                    },
+                },
+            },
+        })
+        config = load_config(path)
+        assert config.llm.filter.enabled is True
+        assert config.llm.summarizer.enabled is True
+        assert config.llm.filter.model == "gpt-4o-mini"
+        assert config.llm.summarizer.model == "gpt-5-nano-2025-08-07"
+        assert config.llm.filter.cost_control.max_cost_per_run == 0.10
+        assert config.llm.summarizer.cost_control.max_cost_per_run == 1.50
+
+
+class TestScoringWithoutAlpha:
+    def test_scoring_has_no_alpha(self, tmp_path):
+        """ScoringConfig no longer has alpha field."""
+        path = _write_config(tmp_path, {
+            "topic": {
+                "name": "Test",
+                "primary_keywords": ["test"],
+            }
+        })
+        config = load_config(path)
+        assert not hasattr(config.scoring, "alpha")
+        assert not hasattr(config.scoring, "relevance")
+
+    def test_scoring_has_quality_and_venue_tiers(self, tmp_path):
+        """ScoringConfig still has quality weights and venue_tiers."""
+        path = _write_config(tmp_path, {
+            "topic": {
+                "name": "Test",
+                "primary_keywords": ["test"],
+            },
+            "scoring": {
+                "quality": {
+                    "w_venue": 0.25,
+                    "w_author": 0.20,
+                    "w_cite": 0.20,
+                    "w_code": 0.15,
+                    "w_fresh": 0.20,
+                },
+                "venue_tiers": {
+                    "tier1": ["CVPR", "ICCV"],
+                    "tier2": ["ECCV", "ICRA"],
+                },
+            },
+        })
+        config = load_config(path)
+        assert config.scoring.quality.w_venue == 0.25
+        assert config.scoring.venue_tiers == {
+            "tier1": ["CVPR", "ICCV"],
+            "tier2": ["ECCV", "ICRA"],
+        }

@@ -19,6 +19,7 @@ class TopicConfig:
     secondary_keywords: list[str] = field(default_factory=list)
     benchmarks: list[str] = field(default_factory=list)
     arxiv_categories: list[str] = field(default_factory=list)
+    description: str = ""
 
 
 @dataclass
@@ -43,15 +44,6 @@ class CollectionConfig:
 
 
 @dataclass
-class RelevanceWeights:
-    primary_base: float = 0.5
-    secondary_increment: float = 0.1
-    secondary_cap: float = 0.3
-    benchmark_increment: float = 0.1
-    benchmark_cap: float = 0.2
-
-
-@dataclass
 class QualityWeights:
     w_venue: float = 0.25
     w_author: float = 0.20
@@ -62,8 +54,6 @@ class QualityWeights:
 
 @dataclass
 class ScoringConfig:
-    alpha: float = 0.65
-    relevance: RelevanceWeights = field(default_factory=RelevanceWeights)
     quality: QualityWeights = field(default_factory=QualityWeights)
     venue_tiers: dict[str, list[str]] = field(default_factory=dict)
 
@@ -78,15 +68,30 @@ class CostControl:
 
 
 @dataclass
-class LLMConfig:
+class FilterLLMConfig:
     enabled: bool = False
     model: str = "gpt-4o-mini"
     base_url: str = "https://api.openai.com/v1"
-    temperature: float | None = 0.3
-    max_completion_tokens: int | None = 800
-    use_full_text: bool = False
+    temperature: float | None = None
+    max_completion_tokens: int | None = 256
+    cost_control: CostControl = field(default_factory=CostControl)
+
+
+@dataclass
+class SummarizerLLMConfig:
+    enabled: bool = False
+    model: str = "gpt-5-nano-2025-08-07"
+    base_url: str = "https://api.openai.com/v1"
+    temperature: float | None = None
+    max_completion_tokens: int | None = 16384
     max_text_chars: int = 50000
     cost_control: CostControl = field(default_factory=CostControl)
+
+
+@dataclass
+class LLMConfig:
+    filter: FilterLLMConfig = field(default_factory=FilterLLMConfig)
+    summarizer: SummarizerLLMConfig = field(default_factory=SummarizerLLMConfig)
 
 
 @dataclass
@@ -169,31 +174,41 @@ def _build_topic(d: dict) -> TopicConfig:
         secondary_keywords=d.get("secondary_keywords", []),
         benchmarks=d.get("benchmarks", []),
         arxiv_categories=d.get("arxiv_categories", []),
+        description=d.get("description", ""),
     )
 
 
 def _build_scoring(d: dict) -> ScoringConfig:
-    rel = d.get("relevance", {})
     qual = d.get("quality", {})
     return ScoringConfig(
-        alpha=d.get("alpha", 0.65),
-        relevance=RelevanceWeights(**rel),
         quality=QualityWeights(**qual),
         venue_tiers=d.get("venue_tiers", {}),
     )
 
 
 def _build_llm(d: dict) -> LLMConfig:
-    cc = d.get("cost_control", {})
+    filter_raw = d.get("filter", {})
+    summ_raw = d.get("summarizer", {})
+    filter_cc = filter_raw.get("cost_control", {})
+    summ_cc = summ_raw.get("cost_control", {})
     return LLMConfig(
-        enabled=d.get("enabled", False),
-        model=d.get("model", "gpt-4o-mini"),
-        base_url=d.get("base_url", "https://api.openai.com/v1"),
-        temperature=d.get("temperature", 0.3),
-        max_completion_tokens=d.get("max_completion_tokens", 800),
-        use_full_text=d.get("use_full_text", False),
-        max_text_chars=d.get("max_text_chars", 50000),
-        cost_control=CostControl(**cc),
+        filter=FilterLLMConfig(
+            enabled=filter_raw.get("enabled", False),
+            model=filter_raw.get("model", "gpt-4o-mini"),
+            base_url=filter_raw.get("base_url", "https://api.openai.com/v1"),
+            temperature=filter_raw.get("temperature"),
+            max_completion_tokens=filter_raw.get("max_completion_tokens", 256),
+            cost_control=CostControl(**filter_cc),
+        ),
+        summarizer=SummarizerLLMConfig(
+            enabled=summ_raw.get("enabled", False),
+            model=summ_raw.get("model", "gpt-5-nano-2025-08-07"),
+            base_url=summ_raw.get("base_url", "https://api.openai.com/v1"),
+            temperature=summ_raw.get("temperature"),
+            max_completion_tokens=summ_raw.get("max_completion_tokens", 16384),
+            max_text_chars=summ_raw.get("max_text_chars", 50000),
+            cost_control=CostControl(**summ_cc),
+        ),
     )
 
 
@@ -273,8 +288,6 @@ def load_config(path: str | Path) -> Config:
     scoring = _build_scoring(raw.get("scoring", {}))
 
     # Validate scoring config
-    if not 0.0 <= scoring.alpha <= 1.0:
-        raise ValueError(f"scoring.alpha must be in [0, 1], got {scoring.alpha}")
     qw = scoring.quality
     weight_sum = qw.w_venue + qw.w_author + qw.w_cite + qw.w_code + qw.w_fresh
     if abs(weight_sum - 1.0) > 0.01:
