@@ -17,7 +17,7 @@ arXiv + Blogs + DBLP → Dedup → SQLite → LLM Filter → Semantic Scholar + 
 4. **Enrich** — Pull citations, h-indices, venue, OA PDFs from Semantic Scholar; code links from Papers with Code
 5. **Score** — Quality score from venue tier, citations, author reputation, code availability, freshness
 6. **Summarize** *(optional)* — Fetch full-text PDF, send to LLM for structured summary; LLM also ranks the top papers
-7. **Deliver** — Write Markdown digest; optionally push to Telegram or serve via web dashboard
+7. **Deliver** — Write Markdown digest; push compact top-5 notification to Telegram (with link to full web digest); serve via web dashboard
 
 ## Quick Start
 
@@ -66,7 +66,7 @@ python -m paperdigest [-v] <command> [options]
 
 Controlled by `config.yaml`. See **[docs/configuration.md](docs/configuration.md)** for the full reference with all YAML blocks.
 
-Key sections: topic description + keywords, collection sources, quality weights + venue tiers, LLM filter + summarizer config, delivery channels.
+Key sections: topic description + keywords, collection sources, quality weights + venue tiers, LLM filter + summarizer config, delivery channels, `web.public_url` for Telegram digest links.
 
 ### Environment Variables
 
