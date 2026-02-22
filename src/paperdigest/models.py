@@ -34,9 +34,8 @@ class Paper:
 class Scores:
     """Computed scores for a paper."""
 
-    relevance: float = 0.0
     quality: float = 0.0
-    final: float = 0.0
+    llm_rank: int = 0  # LLM-assigned rank (1 = best); 0 means unranked
 
 
 @dataclass
@@ -51,6 +50,15 @@ class Summary:
     novelty: str = ""
     ad_relevance: str = ""
     limitations: str = ""
+
+
+@dataclass
+class FilterResult:
+    """Result of LLM relevance filtering for a paper."""
+
+    paper: Paper
+    relevant: bool
+    reason: str = ""
 
 
 @dataclass
@@ -70,5 +78,6 @@ class Digest:
     date: datetime
     topic_name: str
     entries: list[DigestEntry] = field(default_factory=list)
+    rejected: list[FilterResult] = field(default_factory=list)
     total_collected: int = 0
     total_new: int = 0
