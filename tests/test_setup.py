@@ -6,6 +6,7 @@ import yaml
 
 
 from paperdigest.setup import (
+    _is_ip_address,
     generate_caddyfile,
     generate_config,
     generate_crontab,
@@ -66,7 +67,7 @@ class TestSetupConfigGeneration:
 
         data = yaml.safe_load(path.read_text())
 
-        assert data["web"]["public_url"] == "https://digest.example.com"
+        assert data["web"]["public_url"] == "https://digest.example.com:8443"
         assert data["web"]["host"] == "0.0.0.0"
 
 
@@ -146,6 +147,31 @@ class TestSetupCaddyfile:
         content = path.read_text()
         assert ":80" in content
         assert "reverse_proxy web:8000" in content
+
+    def test_generate_caddyfile_ip_address(self, tmp_path):
+        """Caddyfile uses :80 when domain is an IP address (no TLS)."""
+        path = tmp_path / "Caddyfile"
+        generate_caddyfile(path, domain="192.168.1.100")
+
+        content = path.read_text()
+        assert ":80" in content
+        assert "192.168.1.100" not in content
+        assert "reverse_proxy web:8000" in content
+
+
+class TestIPAddressDetection:
+    def test_ipv4(self):
+        assert _is_ip_address("192.168.1.1") is True
+        assert _is_ip_address("10.0.0.1") is True
+        assert _is_ip_address("31.97.65.162") is True
+
+    def test_ipv6(self):
+        assert _is_ip_address("::1") is True
+        assert _is_ip_address("2001:db8::1") is True
+
+    def test_fqdn(self):
+        assert _is_ip_address("digest.example.com") is False
+        assert _is_ip_address("my-server.local") is False
 
 
 class TestSetupCrontab:

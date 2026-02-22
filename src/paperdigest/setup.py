@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 import sys
 from pathlib import Path
 
@@ -30,11 +31,15 @@ def generate_config(
 
     Uses gpt-4o-mini as the default model for both filter and summarizer.
     Sets ``web.host`` to ``"0.0.0.0"`` (required for Docker).
-    If *domain* is provided, sets ``web.public_url`` to ``https://{domain}``.
+    If *domain* is an FQDN, sets ``web.public_url`` to ``https://{domain}:8443``.
+    If *domain* is an IP, sets ``web.public_url`` to ``http://{domain}:8080``.
     """
     web_section: dict = {"host": "0.0.0.0", "port": 8000}
     if domain:
-        web_section["public_url"] = f"https://{domain}"
+        if _is_ip_address(domain):
+            web_section["public_url"] = f"http://{domain}:8080"
+        else:
+            web_section["public_url"] = f"https://{domain}:8443"
 
     data: dict = {
         "topic": {
@@ -102,13 +107,26 @@ def generate_env(
     path.write_text("\n".join(lines) + ("\n" if lines else ""))
 
 
+def _is_ip_address(value: str) -> bool:
+    """Return True if *value* looks like an IPv4 or IPv6 address."""
+    if re.match(r"^\d{1,3}(\.\d{1,3}){3}$", value):
+        return True
+    if ":" in value:  # IPv6
+        return True
+    return False
+
+
 def generate_caddyfile(path: Path, *, domain: str | None) -> None:
     """Write a Caddyfile to *path*.
 
-    If *domain* is given it is used as the host block; otherwise ``:80`` is used.
+    If *domain* is an FQDN it is used as the host block (Caddy auto-HTTPS).
+    If *domain* is an IP address or None, ``:80`` is used (plain HTTP).
     Always proxies to ``web:8000``.
     """
-    host = domain if domain else ":80"
+    if domain and not _is_ip_address(domain):
+        host = domain
+    else:
+        host = ":80"
     content = f"{host} {{\n    reverse_proxy web:8000\n}}\n"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(content)
@@ -288,7 +306,10 @@ def run_setup(base_dir: Path) -> None:
         data.setdefault("delivery", {}).setdefault("telegram", {})["enabled"] = True
         changed = True
     if domain:
-        data.setdefault("web", {})["public_url"] = f"https://{domain}"
+        if _is_ip_address(domain):
+            data.setdefault("web", {})["public_url"] = f"http://{domain}:8080"
+        else:
+            data.setdefault("web", {})["public_url"] = f"https://{domain}:8443"
         changed = True
     if use_example:
         data.setdefault("web", {})["host"] = "0.0.0.0"
@@ -352,6 +373,11 @@ def run_setup(base_dir: Path) -> None:
     print("\nNext steps:")
     print("  docker compose up -d        # start all services")
     print("  docker compose logs -f       # watch logs")
-    if domain:
+    if domain and not _is_ip_address(domain):
         print(f"  Point DNS for {domain} -> your server IP")
+        print(f"  Dashboard: https://{domain}:8443")
+    elif domain:
+        print(f"  Dashboard: http://{domain}:8080")
+    else:
+        print("  Dashboard: http://<your-server-ip>:8080")
     print()
