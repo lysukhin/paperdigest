@@ -1,4 +1,4 @@
-"""Tests for the scoring module."""
+"""Tests for the scoring module (quality-only, relevance handled by LLM filter)."""
 
 from datetime import datetime, timedelta, timezone
 
@@ -6,39 +6,35 @@ import pytest
 
 from paperdigest.config import (
     Config,
-    CollectionConfig,
     QualityWeights,
-    RelevanceWeights,
     ScoringConfig,
     TopicConfig,
 )
 from paperdigest.models import Paper, Scores
-from paperdigest.scoring import compute_quality, compute_relevance, score_papers
+from paperdigest.scoring import compute_quality, score_papers
 
 # Fixed reference time for deterministic tests — set to "now" at import time
 # so all tests within a single run share the same value
 REF_TIME = datetime.now(timezone.utc)
 
 
-def _make_config(**overrides) -> Config:
-    topic = TopicConfig(
-        name="VLM for AD",
-        primary_keywords=["vision language model autonomous driving", "VLM autonomous driving"],
-        secondary_keywords=["end-to-end driving", "scene understanding"],
-        benchmarks=["nuScenes", "CARLA"],
-        arxiv_categories=["cs.CV"],
-    )
-    scoring = ScoringConfig(
-        alpha=0.65,
-        relevance=RelevanceWeights(),
-        quality=QualityWeights(),
-        venue_tiers={
-            "tier1": ["CVPR", "NeurIPS", "ICLR"],
-            "tier2": ["ICRA", "IROS"],
-            "tier3": ["ITSC"],
+def _make_config(**overrides):
+    scoring_data = {
+        "quality": QualityWeights(
+            w_venue=0.25, w_author=0.20, w_cite=0.20, w_code=0.15, w_fresh=0.20
+        ),
+        "venue_tiers": {
+            "tier1": ["CVPR", "NeurIPS", "ICML", "ICLR"],
+            "tier2": ["IROS", "ICRA"],
+            "tier3": ["IV", "ITSC"],
         },
+    }
+    scoring_data.update(overrides.pop("scoring", {}))
+    return Config(
+        topic=TopicConfig(name="Test", primary_keywords=["test"]),
+        scoring=ScoringConfig(**scoring_data),
+        **overrides,
     )
-    return Config(topic=topic, scoring=scoring, **overrides)
 
 
 def _make_paper(
@@ -66,55 +62,6 @@ def _make_paper(
     )
 
 
-class TestRelevanceScoring:
-    def test_primary_keyword_hit(self):
-        config = _make_config()
-        paper = _make_paper(
-            title="VLM autonomous driving system",
-            abstract="We propose a new approach.",
-        )
-        score = compute_relevance(paper, config.scoring, config.topic)
-        assert score == pytest.approx(0.5)  # primary_base only
-
-    def test_no_keyword_hit(self):
-        config = _make_config()
-        paper = _make_paper(
-            title="Protein folding with transformers",
-            abstract="Biology stuff",
-        )
-        score = compute_relevance(paper, config.scoring, config.topic)
-        assert score == pytest.approx(0.0)
-
-    def test_secondary_keywords_add(self):
-        config = _make_config()
-        paper = _make_paper(
-            title="VLM autonomous driving",
-            abstract="We do end-to-end driving with scene understanding",
-        )
-        score = compute_relevance(paper, config.scoring, config.topic)
-        # primary (0.5) + 2 secondary (0.1 each = 0.2)
-        assert score == pytest.approx(0.7)
-
-    def test_benchmark_mentions(self):
-        config = _make_config()
-        paper = _make_paper(
-            title="VLM autonomous driving",
-            abstract="Evaluated on nuScenes and CARLA benchmarks",
-        )
-        score = compute_relevance(paper, config.scoring, config.topic)
-        # primary (0.5) + 2 benchmarks (0.1 each = 0.2)
-        assert score == pytest.approx(0.7)
-
-    def test_max_capped_at_one(self):
-        config = _make_config()
-        paper = _make_paper(
-            title="VLM autonomous driving end-to-end driving scene understanding",
-            abstract="nuScenes CARLA evaluation",
-        )
-        score = compute_relevance(paper, config.scoring, config.topic)
-        assert score <= 1.0
-
-
 class TestQualityScoring:
     def test_high_quality_paper(self):
         config = _make_config()
@@ -135,7 +82,7 @@ class TestQualityScoring:
             max_hindex=2,
             venue=None,
             code_url=None,
-            published=REF_TIME,
+            published=REF_TIME - timedelta(days=60),
         )
         score = compute_quality(paper, config.scoring)
         assert score < 0.5
@@ -154,50 +101,32 @@ class TestQualityScoring:
         assert fresh_score > old_score
 
 
-class TestRanking:
-    def test_relevant_paper_ranks_higher(self):
+class TestScorePapers:
+    def test_returns_papers_with_quality_scores(self):
         config = _make_config()
-        relevant = _make_paper(
-            arxiv_id="2401.00001",
-            title="VLM autonomous driving with nuScenes",
-            abstract="We propose end-to-end driving using VLM",
-            citations=50,
-            max_hindex=40,
-            venue="CVPR",
-            code_url="https://github.com/a/b",
-        )
-        irrelevant = _make_paper(
-            arxiv_id="2401.00002",
-            title="Protein structure prediction",
-            abstract="Biology method for protein folding",
-            citations=200,
-            max_hindex=80,
-            venue="Nature",
-        )
-        scored = score_papers([relevant, irrelevant], config)
-        assert scored[0][0].arxiv_id == "2401.00001"
-        # Verify the relevant paper has a higher final score
-        assert scored[0][1].final > scored[1][1].final
+        papers = [
+            _make_paper(
+                arxiv_id="2401.00001",
+                citations=50,
+                max_hindex=30,
+                venue="CVPR",
+                code_url="https://github.com/a/b",
+            ),
+            _make_paper(
+                arxiv_id="2401.00002",
+                citations=0,
+                max_hindex=5,
+                venue=None,
+            ),
+        ]
+        results = score_papers(papers, config)
 
-    def test_higher_quality_breaks_tie(self):
-        config = _make_config()
-        p1 = _make_paper(
-            arxiv_id="2401.00001",
-            title="VLM autonomous driving",
-            abstract="A method",
-            citations=100,
-            venue="CVPR",
-            code_url="https://github.com/a/b",
-        )
-        p2 = _make_paper(
-            arxiv_id="2401.00002",
-            title="VLM autonomous driving",
-            abstract="Another method",
-            citations=0,
-            venue=None,
-        )
-        scored = score_papers([p1, p2], config)
-        assert scored[0][0].arxiv_id == "2401.00001"
-        # Both have same relevance, quality breaks the tie
-        assert scored[0][1].relevance == pytest.approx(scored[1][1].relevance)
-        assert scored[0][1].quality > scored[1][1].quality
+        assert len(results) == 2
+        for paper, scores in results:
+            assert isinstance(paper, Paper)
+            assert isinstance(scores, Scores)
+            assert scores.quality >= 0
+            assert scores.llm_rank == 0
+
+        # Results should be sorted by quality descending
+        assert results[0][1].quality >= results[1][1].quality
