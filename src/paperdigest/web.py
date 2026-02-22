@@ -117,7 +117,12 @@ def _render_digest(config: Config, date: str) -> str | None:
         return None
 
     md = markdown.Markdown(extensions=["tables", "fenced_code"])
-    return md.convert(path.read_text())
+    text = path.read_text()
+    # The markdown lib skips markdown inside HTML blocks like <details>.
+    # Inject markdown="1" so md_in_html can process the inner content.
+    text = text.replace("<details>", '<details markdown="1">')
+    md = markdown.Markdown(extensions=["tables", "fenced_code", "md_in_html"])
+    return md.convert(text)
 
 
 def _get_stats(config: Config) -> dict:
