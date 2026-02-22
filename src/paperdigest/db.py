@@ -90,6 +90,11 @@ class Database:
         return False
 
     def init_schema(self):
+        # Run migrations for existing databases before applying schema
+        # (old scores table would cause index creation to fail on new columns)
+        from .migrate import migrate_scores_table
+        migrate_scores_table(self.conn)
+
         self.conn.executescript(SCHEMA)
         self.conn.execute("PRAGMA foreign_keys=ON")
         self.conn.commit()

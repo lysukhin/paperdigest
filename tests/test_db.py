@@ -1,5 +1,6 @@
 """Tests for the database layer."""
 
+import sqlite3
 from datetime import datetime, timezone
 
 import pytest
@@ -208,3 +209,64 @@ class TestUpdatedScores:
         assert s.llm_rank == 0
         assert s.quality == pytest.approx(0.6)
         db.close()
+
+
+class TestMigration:
+    def test_migrate_old_scores_table(self, tmp_path):
+        """Test migration from old scores schema (relevance, quality, final) to new (quality, llm_rank)."""
+        db_path = tmp_path / "old.db"
+        conn = sqlite3.connect(str(db_path))
+        conn.execute("PRAGMA foreign_keys=ON")
+        # Create old schema
+        conn.executescript("""
+            CREATE TABLE papers (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                arxiv_id TEXT UNIQUE NOT NULL,
+                title TEXT NOT NULL,
+                abstract TEXT NOT NULL,
+                authors TEXT NOT NULL,
+                published TEXT NOT NULL,
+                updated TEXT, doi TEXT, categories TEXT, pdf_url TEXT,
+                citations INTEGER, max_hindex INTEGER, venue TEXT,
+                oa_pdf_url TEXT, code_url TEXT, code_official INTEGER DEFAULT 0,
+                created_at TEXT, updated_at TEXT
+            );
+            CREATE TABLE scores (
+                paper_id INTEGER PRIMARY KEY REFERENCES papers(id),
+                relevance REAL NOT NULL,
+                quality REAL NOT NULL,
+                final REAL NOT NULL,
+                scored_at TEXT DEFAULT (datetime('now'))
+            );
+        """)
+        # Insert test data
+        conn.execute(
+            "INSERT INTO papers (arxiv_id, title, abstract, authors, published) "
+            "VALUES ('2401.00001', 'Test', 'Abstract', '[]', '2024-01-01')"
+        )
+        conn.execute(
+            "INSERT INTO scores (paper_id, relevance, quality, final) "
+            "VALUES (1, 0.8, 0.6, 0.72)"
+        )
+        conn.commit()
+        conn.close()
+
+        # Open with Database (which calls init_schema -> migrate)
+        with Database(db_path) as db:
+            db.init_schema()
+            # Verify migration
+            row = db.conn.execute("SELECT * FROM scores WHERE paper_id = 1").fetchone()
+            assert row["quality"] == pytest.approx(0.6)
+            assert row["llm_rank"] == 0
+            # Verify old columns are gone
+            cursor = db.conn.execute("PRAGMA table_info(scores)")
+            columns = {r[1] for r in cursor.fetchall()}
+            assert "relevance" not in columns
+            assert "final" not in columns
+            assert "llm_rank" in columns
+
+    def test_migration_idempotent(self, tmp_path):
+        """Migration should be safe to run multiple times."""
+        with Database(tmp_path / "test.db") as db:
+            db.init_schema()
+            db.init_schema()  # Second call should not fail
