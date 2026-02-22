@@ -6,7 +6,6 @@ services:
       - ./data:/app/data
       - ./config.yaml:/app/config.yaml:ro
       - ./.env:/app/.env:ro
-    env_file: .env
     environment:
       - NO_PROGRESS=1
       - WEB_HOST=0.0.0.0
@@ -22,7 +21,6 @@ services:
       - ./config.yaml:/app/config.yaml:ro
       - ./.env:/app/.env:ro
       - ./crontab:/app/crontab:ro
-    env_file: .env
     environment:
       - NO_PROGRESS=1
     restart: unless-stopped

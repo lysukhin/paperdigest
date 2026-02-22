@@ -37,12 +37,17 @@ Requires Docker and Docker Compose on your VPS.
 # 1. Clone
 git clone https://github.com/lysukhin/paperdigest && cd paperdigest
 
-# 2. Run interactive setup (generates config.yaml, .env, Caddyfile, crontab)
+# 2. Create placeholder files (setup wizard will populate them)
+touch .env config.yaml crontab
+
+# 3. Run interactive setup (generates config.yaml, .env, Caddyfile, crontab)
 docker compose run --rm web paperdigest setup
 
-# 3. Start everything
+# 4. Start everything
 docker compose up -d
 ```
+
+> **Note:** If you have an older Docker that doesn't support `docker compose` (v2 plugin), use `docker-compose` (hyphenated) instead — e.g. `docker-compose run --rm web paperdigest setup`.
 
 This gives you:
 - **Web dashboard** with auto-HTTPS (set your domain during setup)
