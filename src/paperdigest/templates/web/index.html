@@ -3,381 +3,142 @@
 
 {% block extra_css %}
 <style>
-    /* Stats strip */
-    .stats-strip {
+    .stats {
         display: flex;
-        gap: 32px;
-        margin-bottom: 40px;
-        padding: 16px 0;
-        border-bottom: 1px solid var(--border-light);
-        animation: fadeInUp 0.4s ease-out both;
+        gap: 24px;
+        margin-bottom: 32px;
+        padding: 12px 0;
+        border-bottom: 1px solid var(--border);
     }
 
     .stat {
         display: flex;
         align-items: baseline;
-        gap: 8px;
+        gap: 6px;
     }
 
     .stat-value {
-        font-family: var(--font-display);
-        font-size: 1.75rem;
-        font-weight: 700;
-        color: var(--text);
-        line-height: 1;
+        font-family: var(--font-mono);
+        font-size: 1.125rem;
+        font-weight: 600;
     }
 
     .stat-label {
         font-family: var(--font-mono);
-        font-size: 0.65rem;
-        text-transform: uppercase;
-        letter-spacing: 0.1em;
+        font-size: 0.6875rem;
         color: var(--text-muted);
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
     }
 
-    /* Run section */
-    .run-section {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        margin-bottom: 48px;
-        animation: fadeInUp 0.4s ease-out 0.1s both;
-    }
-
-    .run-section h2 {
-        font-family: var(--font-display);
-        font-size: 1.1rem;
-        font-weight: 400;
+    .section-title {
+        font-size: 0.875rem;
+        font-weight: 600;
         color: var(--text-secondary);
-        font-style: italic;
+        margin-bottom: 16px;
     }
 
-    .run-btn {
-        font-family: var(--font-mono);
-        font-size: 0.75rem;
-        letter-spacing: 0.06em;
-        text-transform: uppercase;
-        padding: 10px 24px;
-        border: 1px solid var(--accent);
-        background: transparent;
-        color: var(--accent);
-        cursor: pointer;
-        transition: all 0.25s ease;
-        position: relative;
-        overflow: hidden;
-    }
-
-    .run-btn:hover {
-        background: var(--accent);
-        color: white;
-        box-shadow: var(--shadow-md);
-    }
-
-    .run-btn:active {
-        transform: scale(0.98);
-    }
-
-    .run-btn:disabled {
-        cursor: not-allowed;
-        opacity: 0.6;
-    }
-
-    .run-btn.running {
-        border-color: var(--score-fill);
-        color: var(--score-fill);
-        background: transparent;
-    }
-
-    .run-btn.running::before {
-        content: '';
-        position: absolute;
-        left: 0;
-        top: 0;
-        height: 100%;
-        width: 30%;
-        background: rgba(217, 119, 6, 0.08);
-        animation: shimmer 1.5s ease-in-out infinite;
-    }
-
-    @keyframes shimmer {
-        0% { transform: translateX(-100%); }
-        100% { transform: translateX(400%); }
-    }
-
-    .run-btn.done {
-        border-color: var(--success);
-        color: var(--success);
-    }
-
-    .run-btn.error {
-        border-color: var(--error);
-        color: var(--error);
-    }
-
-    .run-status {
-        font-family: var(--font-mono);
-        font-size: 0.7rem;
-        color: var(--text-muted);
-        margin-right: 16px;
-    }
-
-    .status-dot {
-        display: inline-block;
-        width: 6px;
-        height: 6px;
-        border-radius: 50%;
-        margin-right: 6px;
-        vertical-align: middle;
-    }
-
-    .status-dot.running {
-        background: var(--score-fill);
-        animation: pulse 1.2s ease-in-out infinite;
-    }
-
-    .status-dot.done { background: var(--success); }
-    .status-dot.error { background: var(--error); }
-
-    /* Digest cards */
     .digest-list {
         display: flex;
         flex-direction: column;
-        gap: 16px;
     }
 
-    .digest-card {
-        display: block;
-        background: var(--bg-card);
-        border: 1px solid var(--border);
-        padding: 28px 32px;
-        transition: all 0.3s ease;
-        text-decoration: none;
-        color: inherit;
-        position: relative;
-    }
-
-    .digest-card:hover {
-        border-color: var(--accent);
-        box-shadow: var(--shadow-lg);
-        transform: translateY(-1px);
-        color: inherit;
-    }
-
-    .digest-card:hover .card-arrow {
-        opacity: 1;
-        transform: translateX(0);
-    }
-
-    .card-header {
+    .digest-item {
         display: flex;
         align-items: baseline;
         justify-content: space-between;
-        margin-bottom: 6px;
+        padding: 12px 0;
+        border-bottom: 1px solid var(--border);
+        text-decoration: none;
+        color: inherit;
     }
 
-    .card-date {
-        font-family: var(--font-display);
-        font-size: 1.4rem;
-        font-weight: 600;
-        color: var(--text);
-        letter-spacing: -0.01em;
+    .digest-item:hover { color: inherit; text-decoration: none; }
+    .digest-item:hover .digest-date { color: var(--link); }
+
+    .digest-date {
+        font-weight: 500;
+        font-size: 0.9375rem;
     }
 
-    .card-count {
+    .digest-meta {
         font-family: var(--font-mono);
-        font-size: 0.7rem;
-        text-transform: uppercase;
-        letter-spacing: 0.08em;
+        font-size: 0.75rem;
         color: var(--text-muted);
+        flex-shrink: 0;
+        margin-left: 16px;
     }
 
-    .card-topic {
-        font-size: 0.85rem;
-        color: var(--text-secondary);
-        margin-bottom: 16px;
-        font-style: italic;
-    }
-
-    .card-divider {
-        width: 40px;
-        height: 1px;
-        background: var(--border);
-        margin-bottom: 14px;
-    }
-
-    .card-previews {
+    .digest-previews {
         list-style: none;
-        display: flex;
-        flex-direction: column;
-        gap: 6px;
+        margin-top: 4px;
     }
 
-    .card-previews li {
-        font-size: 0.82rem;
+    .digest-previews li {
+        font-size: 0.8125rem;
         color: var(--text-secondary);
-        line-height: 1.4;
-        padding-left: 14px;
-        position: relative;
+        line-height: 1.5;
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
     }
 
-    .card-previews li::before {
-        content: '';
-        position: absolute;
-        left: 0;
-        top: 8px;
-        width: 4px;
-        height: 4px;
-        border-radius: 50%;
-        background: var(--text-muted);
+    .digest-previews li::before {
+        content: "\2013\00a0";
+        color: var(--text-muted);
     }
 
-    .card-arrow {
-        position: absolute;
-        right: 28px;
-        bottom: 28px;
-        font-family: var(--font-mono);
-        font-size: 0.75rem;
-        color: var(--accent);
-        opacity: 0;
-        transform: translateX(-8px);
-        transition: all 0.3s ease;
-    }
-
-    /* Empty state */
     .empty-state {
+        padding: 64px 0;
         text-align: center;
-        padding: 80px 0;
-        animation: fadeInUp 0.5s ease-out 0.2s both;
-    }
-
-    .empty-state h2 {
-        font-family: var(--font-display);
-        font-size: 1.6rem;
-        font-weight: 400;
-        font-style: italic;
-        color: var(--text-secondary);
-        margin-bottom: 8px;
     }
 
     .empty-state p {
-        font-size: 0.9rem;
         color: var(--text-muted);
+        font-size: 0.9375rem;
     }
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="stats-strip">
+<div class="stats">
     <div class="stat">
         <span class="stat-value">{{ stats.papers }}</span>
-        <span class="stat-label">Papers</span>
+        <span class="stat-label">papers</span>
     </div>
     <div class="stat">
         <span class="stat-value">{{ stats.scored }}</span>
-        <span class="stat-label">Scored</span>
+        <span class="stat-label">scored</span>
     </div>
     <div class="stat">
         <span class="stat-value">{{ stats.digests }}</span>
-        <span class="stat-label">Digests</span>
+        <span class="stat-label">digests</span>
     </div>
 </div>
 
-<div class="run-section">
-    <h2>Past digests</h2>
-    <div style="display: flex; align-items: center;">
-        <span class="run-status" id="runStatus"></span>
-        <button class="run-btn" id="runBtn" onclick="triggerRun()">
-            Run new digest
-        </button>
-    </div>
-</div>
+<h2 class="section-title">Past digests</h2>
 
 {% if digests %}
 <div class="digest-list">
     {% for d in digests %}
-    <a href="/digest/{{ d.date }}" class="digest-card fade-in" style="animation-delay: {{ loop.index0 * 0.06 }}s">
-        <div class="card-header">
-            <span class="card-date">{{ d.display_date }}</span>
-            <span class="card-count">{{ d.papers_count }} papers</span>
+    <a href="/digest/{{ d.date }}" class="digest-item">
+        <div>
+            <div class="digest-date">{{ d.display_date }}</div>
+            {% if d.preview_titles %}
+            <ul class="digest-previews">
+                {% for title in d.preview_titles %}
+                <li>{{ title }}</li>
+                {% endfor %}
+            </ul>
+            {% endif %}
         </div>
-        <div class="card-topic">{{ d.topic }}</div>
-        <div class="card-divider"></div>
-        <ul class="card-previews">
-            {% for title in d.preview_titles %}
-            <li>{{ title }}</li>
-            {% endfor %}
-        </ul>
-        <span class="card-arrow">&rarr;</span>
+        <span class="digest-meta">{{ d.papers_count }} papers</span>
     </a>
     {% endfor %}
 </div>
 {% else %}
 <div class="empty-state">
-    <h2>No digests yet</h2>
-    <p>Run your first digest to get started.</p>
+    <p>No digests yet. Run <code>paperdigest digest</code> to generate one.</p>
 </div>
 {% endif %}
-{% endblock %}
-
-{% block scripts %}
-<script>
-const btn = document.getElementById('runBtn');
-const status = document.getElementById('runStatus');
-let polling = null;
-
-function triggerRun() {
-    btn.disabled = true;
-    btn.className = 'run-btn running';
-    btn.textContent = 'Running\u2026';
-    status.innerHTML = '<span class="status-dot running"></span>Pipeline in progress';
-
-    fetch('/api/run', { method: 'POST' })
-        .then(r => {
-            if (r.status === 409) {
-                status.innerHTML = '<span class="status-dot running"></span>Already running';
-                return;
-            }
-            startPolling();
-        })
-        .catch(() => {
-            btn.className = 'run-btn error';
-            btn.textContent = 'Failed';
-            btn.disabled = false;
-            status.innerHTML = '<span class="status-dot error"></span>Request failed';
-        });
-}
-
-function startPolling() {
-    polling = setInterval(() => {
-        fetch('/api/run/status')
-            .then(r => r.json())
-            .then(data => {
-                if (data.status === 'done') {
-                    clearInterval(polling);
-                    btn.className = 'run-btn done';
-                    btn.textContent = 'Complete';
-                    status.innerHTML = '<span class="status-dot done"></span>Finished';
-                    setTimeout(() => window.location.reload(), 1500);
-                } else if (data.status === 'error') {
-                    clearInterval(polling);
-                    btn.className = 'run-btn error';
-                    btn.textContent = 'Error';
-                    btn.disabled = false;
-                    status.innerHTML = '<span class="status-dot error"></span>' + (data.error || 'Unknown error');
-                }
-            });
-    }, 2000);
-}
-
-{% if run_state.status == 'running' %}
-btn.className = 'run-btn running';
-btn.textContent = 'Running\u2026';
-btn.disabled = true;
-status.innerHTML = '<span class="status-dot running"></span>Pipeline in progress';
-startPolling();
-{% endif %}
-</script>
 {% endblock %}

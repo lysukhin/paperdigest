@@ -2,23 +2,18 @@
 
 from __future__ import annotations
 
-import argparse
 import logging
 import re
-import threading
 from datetime import datetime
 from pathlib import Path
 
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse
 from starlette.templating import Jinja2Templates
 
 from .config import Config
 
 logger = logging.getLogger("paperdigest.web")
-
-_run_state = {"status": "idle", "started_at": None, "error": None}
-_run_lock = threading.Lock()
 
 
 def create_app(config: Config) -> FastAPI:
@@ -37,7 +32,6 @@ def create_app(config: Config) -> FastAPI:
                 "digests": digests,
                 "stats": stats,
                 "topic": config.topic.name,
-                "run_state": _run_state,
             },
         )
 
@@ -58,23 +52,6 @@ def create_app(config: Config) -> FastAPI:
                 "topic": config.topic.name,
             },
         )
-
-    @app.post("/api/run")
-    async def trigger_run():
-        with _run_lock:
-            if _run_state["status"] == "running":
-                return JSONResponse({"error": "Already running"}, status_code=409)
-            _run_state["status"] = "running"
-            _run_state["started_at"] = datetime.now().isoformat()
-            _run_state["error"] = None
-
-        thread = threading.Thread(target=_run_pipeline, args=(config,), daemon=True)
-        thread.start()
-        return {"status": "started"}
-
-    @app.get("/api/run/status")
-    async def run_status():
-        return _run_state
 
     return app
 
@@ -159,25 +136,6 @@ def _get_stats(config: Config) -> dict:
     except Exception:
         logger.debug("Could not read DB stats", exc_info=True)
     return stats
-
-
-def _run_pipeline(config: Config):
-    try:
-        from .cli import cmd_run
-
-        args = argparse.Namespace(
-            config=str(config.base_dir / "config.yaml"),
-            verbose=False,
-        )
-        cmd_run(args)
-
-        with _run_lock:
-            _run_state["status"] = "done"
-    except Exception as e:
-        logger.exception("Pipeline run failed")
-        with _run_lock:
-            _run_state["status"] = "error"
-            _run_state["error"] = str(e)
 
 
 def run_server(config: Config):
