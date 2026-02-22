@@ -52,13 +52,13 @@ docker compose up -d
 > **Note:** If you have an older Docker that doesn't support `docker compose` (v2 plugin), use `docker-compose` (hyphenated) instead — e.g. `docker-compose run --rm web paperdigest setup`.
 
 This gives you:
-- **Web dashboard** at `http://<your-ip>:8080` (or `https://<domain>:8443` if you set a domain)
+- **Web dashboard** at `http://<your-ip>:38080` (or `https://<domain>:38443` if you set a domain)
 - **Scheduled digests** via cron (default: daily 9:00 UTC)
 - **Telegram notifications** (optional, configured during setup)
 
 See `docker compose logs -f` to watch progress.
 
-> **Tip:** If port 8080 is not reachable (firewall, VPN), use an SSH tunnel: `ssh -L 8080:localhost:8080 root@<your-ip>`, then open `http://localhost:8080`.
+> **Tip:** If port 38080 is not reachable (firewall, VPN), use an SSH tunnel: `ssh -L 38080:localhost:38080 root@<your-ip>`, then open `http://localhost:38080`.
 
 ## Installation
 

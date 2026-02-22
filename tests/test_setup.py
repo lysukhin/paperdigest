@@ -67,7 +67,7 @@ class TestSetupConfigGeneration:
 
         data = yaml.safe_load(path.read_text())
 
-        assert data["web"]["public_url"] == "https://digest.example.com:8443"
+        assert data["web"]["public_url"] == "https://digest.example.com:38443"
         assert data["web"]["host"] == "0.0.0.0"
 
 

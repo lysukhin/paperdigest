@@ -30,8 +30,8 @@ services:
   caddy:
     image: caddy:2-alpine
     ports:
-      - "8080:80"
-      - "8443:443"
+      - "38080:80"
+      - "38443:443"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data

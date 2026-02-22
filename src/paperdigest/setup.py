@@ -31,15 +31,15 @@ def generate_config(
 
     Uses gpt-4o-mini as the default model for both filter and summarizer.
     Sets ``web.host`` to ``"0.0.0.0"`` (required for Docker).
-    If *domain* is an FQDN, sets ``web.public_url`` to ``https://{domain}:8443``.
-    If *domain* is an IP, sets ``web.public_url`` to ``http://{domain}:8080``.
+    If *domain* is an FQDN, sets ``web.public_url`` to ``https://{domain}:38443``.
+    If *domain* is an IP, sets ``web.public_url`` to ``http://{domain}:38080``.
     """
     web_section: dict = {"host": "0.0.0.0", "port": 8000}
     if domain:
         if _is_ip_address(domain):
-            web_section["public_url"] = f"http://{domain}:8080"
+            web_section["public_url"] = f"http://{domain}:38080"
         else:
-            web_section["public_url"] = f"https://{domain}:8443"
+            web_section["public_url"] = f"https://{domain}:38443"
 
     data: dict = {
         "topic": {
@@ -307,9 +307,9 @@ def run_setup(base_dir: Path) -> None:
         changed = True
     if domain:
         if _is_ip_address(domain):
-            data.setdefault("web", {})["public_url"] = f"http://{domain}:8080"
+            data.setdefault("web", {})["public_url"] = f"http://{domain}:38080"
         else:
-            data.setdefault("web", {})["public_url"] = f"https://{domain}:8443"
+            data.setdefault("web", {})["public_url"] = f"https://{domain}:38443"
         changed = True
     if use_example:
         data.setdefault("web", {})["host"] = "0.0.0.0"
@@ -375,9 +375,9 @@ def run_setup(base_dir: Path) -> None:
     print("  docker compose logs -f       # watch logs")
     if domain and not _is_ip_address(domain):
         print(f"  Point DNS for {domain} -> your server IP")
-        print(f"  Dashboard: https://{domain}:8443")
+        print(f"  Dashboard: https://{domain}:38443")
     elif domain:
-        print(f"  Dashboard: http://{domain}:8080")
+        print(f"  Dashboard: http://{domain}:38080")
     else:
-        print("  Dashboard: http://<your-server-ip>:8080")
+        print("  Dashboard: http://<your-server-ip>:38080")
     print()
