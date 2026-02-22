@@ -135,8 +135,30 @@ def cmd_enrich(args):
         logger.info("Enrichment complete")
 
 
+def cmd_filter(args):
+    """Filter papers using LLM relevance check."""
+    config = get_config(args)
+    if not config.llm.filter.enabled:
+        logger.info("LLM filter is disabled in config")
+        return
+
+    with Database(config.db_path) as db:
+        db.init_schema()
+
+        from .filter import PaperFilter
+
+        papers = db.get_all_papers()
+        if not papers:
+            logger.info("No papers to filter")
+            return
+
+        filt = PaperFilter(config, db)
+        relevant, rejected = filt.filter_papers(papers)
+        logger.info(f"Filter: {len(relevant)} relevant, {len(rejected)} rejected")
+
+
 def cmd_score(args):
-    """Score all papers."""
+    """Score all papers (quality signals only)."""
     config = get_config(args)
     with Database(config.db_path) as db:
         db.init_schema()
@@ -152,7 +174,7 @@ def cmd_score(args):
         for paper, scores in scored:
             db.upsert_scores(paper.db_id, scores)
 
-        logger.info(f"Scored {len(scored)} papers")
+        logger.info(f"Scored {len(scored)} papers (quality)")
 
 
 def cmd_digest(args):
@@ -163,61 +185,106 @@ def cmd_digest(args):
 
         dry_run = getattr(args, "dry_run", False)
 
-        top = db.get_top_scored_papers(limit=config.digest.top_n)
-        if not top:
-            logger.info("No scored papers. Run 'score' first.")
+        papers = db.get_all_papers()
+        if not papers:
+            logger.info("No papers found. Run 'fetch' first.")
             return
 
-        # Optional LLM summarization
+        # LLM filter
+        rejected_results = []
+        if config.llm.filter.enabled and not dry_run:
+            from .filter import PaperFilter
+            filt = PaperFilter(config, db)
+            papers, rejected_results = filt.filter_papers(papers)
+            if not papers:
+                logger.info("No relevant papers after filtering")
+                return
+
+        # Enrich survivors (if not already enriched)
+        from .enrichment.pwc import enrich_with_pwc
+        from .enrichment.semantic_scholar import enrich_papers
+
+        unenriched = [p for p in papers if p.citations is None]
+        if unenriched:
+            logger.info(f"Enriching {len(unenriched)} papers...")
+            unenriched = enrich_papers(unenriched, config)
+            unenriched = enrich_with_pwc(unenriched, config)
+            for paper in unenriched:
+                db.update_enrichment(paper)
+            # Refresh from DB to get enrichment data
+            papers = [db.get_paper_by_arxiv_id(p.arxiv_id) for p in papers]
+            papers = [p for p in papers if p is not None]
+
+        # Quality scoring
+        from .scoring import score_papers as compute_quality_scores
+        scored = compute_quality_scores(papers, config)
+        for paper, scores in scored:
+            db.upsert_scores(paper.db_id, scores)
+
+        # Limit to top_n for summarization
+        top_papers = [p for p, _ in scored[:config.digest.top_n]]
+        quality_map = {p.arxiv_id: s.quality for p, s in scored}
+
+        # LLM summarize + rank
         summaries = {}
-        if config.llm.enabled and not dry_run:
+        ranking = {}
+        if config.llm.summarizer.enabled and not dry_run:
             from .summarizer import Summarizer
-
             summarizer = Summarizer(config, db)
-            summarize_papers = [p for p, _ in top[: config.digest.summarize_top_n]]
-            summaries = summarizer.summarize_papers(summarize_papers)
+            summarize_subset = top_papers[:config.digest.summarize_top_n]
+            summaries = summarizer.summarize_papers(summarize_subset)
+            ranking = summarizer.rank_papers(top_papers, summaries, quality_map)
         elif dry_run:
-            logger.info("Dry run — skipping LLM summarization")
+            logger.info("Dry run — skipping LLM summarization and ranking")
 
-        # Build digest
+        # If no LLM ranking, use quality order
+        if not ranking:
+            ranking = {p.arxiv_id: rank for rank, p in enumerate(top_papers, 1)}
+
+        # Update scores with LLM rank
+        for paper, scores in scored[:config.digest.top_n]:
+            llm_rank = ranking.get(paper.arxiv_id, len(top_papers))
+            scores.llm_rank = llm_rank
+            db.upsert_scores(paper.db_id, scores)
+
+        # Build digest entries sorted by LLM rank
         entries = []
-        for rank, (paper, scores) in enumerate(top, 1):
-            summary = summaries.get(paper.arxiv_id)
-            entries.append(DigestEntry(paper=paper, scores=scores, rank=rank, summary=summary))
+        scored_map = {p.arxiv_id: (p, s) for p, s in scored}
+        for paper in sorted(top_papers, key=lambda p: ranking.get(p.arxiv_id, 999)):
+            p, s = scored_map[paper.arxiv_id]
+            rank = ranking.get(p.arxiv_id, 0)
+            summary = summaries.get(p.arxiv_id)
+            entries.append(DigestEntry(paper=p, scores=s, rank=rank, summary=summary))
 
         total_papers = db.get_paper_count()
         digest = Digest(
             date=datetime.now(timezone.utc),
             topic_name=config.topic.name,
             entries=entries,
+            rejected=rejected_results,
             total_collected=total_papers,
             total_new=len(entries),
         )
 
         # Deliver
         from .delivery.markdown import deliver_markdown
-
         md_path = deliver_markdown(digest, config)
         logger.info(f"Markdown digest: {md_path}")
 
         tg_ok = True
         if config.delivery.telegram.enabled:
             from .delivery.telegram import deliver_telegram
-
             tg_ok = deliver_telegram(digest, config)
 
-        # Log digest
-        paper_ids = [p.db_id for p, _ in top]
+        paper_ids = [p.db_id for p in top_papers]
         status = "delivered" if tg_ok else "partial_delivery"
         db.log_digest(paper_ids, status=status)
 
 
 def cmd_run(args):
-    """Full pipeline: fetch -> enrich -> score -> digest."""
+    """Full pipeline: fetch -> digest (includes filter, enrich, score, summarize, rank)."""
     logger.info("Starting full pipeline run...")
     cmd_fetch(args)
-    cmd_enrich(args)
-    cmd_score(args)
     cmd_digest(args)
     logger.info("Pipeline run complete")
 
@@ -246,9 +313,12 @@ def cmd_stats(args):
         print(f"Scored:   {scored_count}")
         print(f"Digests:  {digest_count}")
 
-        if config.llm.enabled:
+        if config.llm.filter.enabled or config.llm.summarizer.enabled:
             stats = db.get_llm_stats()
-            monthly_budget = config.llm.cost_control.max_cost_per_month
+            monthly_budget = (
+                config.llm.filter.cost_control.max_cost_per_month
+                + config.llm.summarizer.cost_control.max_cost_per_month
+            )
             remaining = monthly_budget - stats["total_cost_usd"]
             print(f"\nLLM Usage ({stats['month']}):")
             print(f"  Runs:                {stats['runs']}")
@@ -289,6 +359,9 @@ def main(argv: list[str] | None = None):
     # score
     subparsers.add_parser("score", parents=[common], help="Score all papers")
 
+    # filter
+    subparsers.add_parser("filter", parents=[common], help="Filter papers by LLM relevance")
+
     # digest
     digest_parser = subparsers.add_parser("digest", parents=[common], help="Generate and deliver digest")
     digest_parser.add_argument(
@@ -323,6 +396,7 @@ def main(argv: list[str] | None = None):
         "fetch": cmd_fetch,
         "enrich": cmd_enrich,
         "score": cmd_score,
+        "filter": cmd_filter,
         "digest": cmd_digest,
         "init": cmd_init,
         "serve": cmd_serve,
