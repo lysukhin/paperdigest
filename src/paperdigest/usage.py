@@ -6,8 +6,11 @@ import json
 import logging
 import urllib.request
 from datetime import datetime, timezone
+from pathlib import Path
 
 logger = logging.getLogger("paperdigest.usage")
+
+USAGE_CACHE_FILE = "usage_cache.json"
 
 
 def fetch_openai_usage(admin_key: str) -> dict | None:
@@ -123,3 +126,24 @@ def _api_get(url: str, admin_key: str) -> dict:
     )
     with urllib.request.urlopen(req, timeout=15) as resp:
         return json.loads(resp.read().decode())
+
+
+def update_usage_cache(admin_key: str, base_dir: Path) -> dict | None:
+    """Fetch OpenAI usage and write it to a cache file. Returns the usage dict."""
+    usage = fetch_openai_usage(admin_key)
+    if usage:
+        cache_path = base_dir / USAGE_CACHE_FILE
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        cache_path.write_text(json.dumps(usage))
+    return usage
+
+
+def read_usage_cache(base_dir: Path) -> dict | None:
+    """Read cached OpenAI usage from disk. Returns None if missing or corrupt."""
+    cache_path = base_dir / USAGE_CACHE_FILE
+    if not cache_path.exists():
+        return None
+    try:
+        return json.loads(cache_path.read_text())
+    except (json.JSONDecodeError, OSError):
+        return None
