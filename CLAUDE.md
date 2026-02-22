@@ -96,6 +96,14 @@ Unit tests across 5 files — all with no external API calls:
 - `test_filter.py` — LLM filter with mocked OpenAI client, fail-open behavior, budget enforcement, cost tracking
 - `test_summarizer.py` — LLM summarization with mocked OpenAI client, budget enforcement, cost tracking, ranking, error handling
 
+### Docs
+
+`docs/` contains detailed references (linked from README):
+- `configuration.md` — full config.yaml reference with all YAML blocks
+- `scoring.md` — scoring formulas, LLM filter/ranking details, enrichment sources, cost controls
+- `roadmap.md` — planned features and TODO items
+- `plans/` — design and implementation plans for features
+
 ## Runtime Data
 
 `data/` directory (gitignored) contains:
