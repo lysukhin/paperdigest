@@ -80,6 +80,7 @@ Key sections: topic description + keywords, collection sources, quality weights 
 |----------|----------|---------|
 | `LLM_API_KEY` | If any LLM enabled | OpenAI or compatible API key |
 | `SEMANTIC_SCHOLAR_API_KEY` | No | Faster Semantic Scholar rate limits |
+| `OPENAI_ADMIN_KEY` | No | Real OpenAI usage/costs on dashboard and `stats` |
 | `TELEGRAM_BOT_TOKEN` | If Telegram enabled | From [@BotFather](https://t.me/BotFather) |
 | `TELEGRAM_CHAT_ID` | If Telegram enabled | Target channel or group ID |
 

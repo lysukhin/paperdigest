@@ -49,7 +49,7 @@ arXiv + Blogs + DBLP → Dedup → SQLite → LLM Filter → Semantic Scholar + 
 ### Package Layout (`src/paperdigest/`)
 
 - **cli.py** — argparse-based CLI with 9 subcommands (`run`, `fetch`, `filter`, `enrich`, `score`, `digest`, `init`, `serve`, `stats`), global `-v` flag; `run` calls `fetch` then `digest`; `digest` orchestrates filter→enrich→score→summarize→rank
-- **config.py** — YAML loading into validated dataclasses; loads secrets from `.env` file (falls back to env vars: `LLM_API_KEY`, `SEMANTIC_SCHOLAR_API_KEY`, `TELEGRAM_*`); `topic.description` for LLM filter; `LLMConfig` split into `FilterLLMConfig` + `SummarizerLLMConfig`
+- **config.py** — YAML loading into validated dataclasses; loads secrets from `.env` file (falls back to env vars: `LLM_API_KEY`, `SEMANTIC_SCHOLAR_API_KEY`, `OPENAI_ADMIN_KEY`, `TELEGRAM_*`); `topic.description` for LLM filter; `LLMConfig` split into `FilterLLMConfig` + `SummarizerLLMConfig`
 - **models.py** — core data models: `Paper`, `Scores`, `Summary`, `DigestEntry`, `Digest`, `FilterResult`; `Scores` has `quality` + `llm_rank` (no `relevance`/`final`); `Digest` has `rejected` field
 - **db.py** — SQLite with WAL mode; context manager (`with Database(...) as db:`); 5 tables (`papers`, `scores`, `digests`, `llm_usage`, `paper_filter_results`); upsert patterns, cost tracking
 - **filter.py** — LLM-based paper relevance filtering using cheap model (gpt-4o-mini); reads title+abstract against `topic.description`; binary relevant/not with reason; fail-open on errors; cost tracked separately with `filter_` prefix on `run_id`
@@ -63,7 +63,8 @@ arXiv + Blogs + DBLP → Dedup → SQLite → LLM Filter → Semantic Scholar + 
   - `waymo.py` — Waymo Research page scraper, extracts arXiv IDs from links
   - `wayve.py` — Wayve Science scraper (currently blocked by WAF, disabled in config)
   - `dblp.py` — DBLP conference proceedings search; covers CVPR, ICRA, IROS, ECCV, IV, ITSC, etc. (NeurIPS excluded — triggers DBLP API 500)
-- **web.py** — FastAPI web dashboard with digest viewer and pipeline trigger
+- **web.py** — FastAPI read-only web dashboard with digest archive and digest viewer; renders markdown digests to HTML (uses `md_in_html` extension for `<details>` blocks)
+- **usage.py** — fetches real OpenAI token usage and USD costs via Admin API (`/v1/organization/usage/completions` + `/v1/organization/costs`); requires `OPENAI_ADMIN_KEY`
 - **enrichment/** — `semantic_scholar.py` (citations, h-index, venue, OA PDF) and `pwc.py` (code links via local JSON dump)
 - **delivery/** — `markdown.py` (sandboxed Jinja2 template at `templates/digest.md.j2`) and `telegram.py` (raw HTTP, MarkdownV2, 4096 char limit)
 
