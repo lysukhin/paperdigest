@@ -38,7 +38,7 @@ Requires Docker and Docker Compose on your VPS.
 git clone https://github.com/lysukhin/paperdigest && cd paperdigest
 
 # 2. Create placeholder files (setup wizard will populate them)
-touch .env config.yaml crontab
+touch .env config.yaml crontab Caddyfile
 
 # 3. Run interactive setup (generates config.yaml, .env, Caddyfile, crontab)
 docker compose run --rm web paperdigest setup
