@@ -24,6 +24,18 @@ def _is_interactive() -> bool:
     return hasattr(sys.stdout, "isatty") and sys.stdout.isatty()
 
 
+def _refresh_usage_cache(config: Config):
+    """Update the cached OpenAI usage file (best-effort, no-op without admin key)."""
+    if not config.openai_admin_key:
+        return
+    try:
+        from .usage import update_usage_cache
+
+        update_usage_cache(config.openai_admin_key, config.base_dir)
+    except Exception:
+        logger.debug("Could not refresh usage cache", exc_info=True)
+
+
 def setup_logging(verbose: bool = False):
     level = logging.DEBUG if verbose else logging.INFO
     logging.basicConfig(
@@ -350,6 +362,7 @@ def cmd_digest(args):
         db.init_schema()
         with tracker:
             _cmd_digest_inner(config, db, tracker, dry_run=dry_run)
+    _refresh_usage_cache(config)
 
 
 def cmd_run(args):
@@ -363,6 +376,7 @@ def cmd_run(args):
         with tracker:
             _cmd_fetch_inner(config, db, tracker)
             _cmd_digest_inner(config, db, tracker, dry_run=dry_run)
+    _refresh_usage_cache(config)
     logger.info("Pipeline run complete")
 
 
@@ -511,9 +525,9 @@ def cmd_stats(args):
             console.print(llm_table)
 
     if config.openai_admin_key:
-        from .usage import fetch_openai_usage
+        from .usage import update_usage_cache
 
-        usage = fetch_openai_usage(config.openai_admin_key)
+        usage = update_usage_cache(config.openai_admin_key, config.base_dir)
         if usage:
             oai_table = Table(
                 title=f"OpenAI Account ({usage['month']})",
