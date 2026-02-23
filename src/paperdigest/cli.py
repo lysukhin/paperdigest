@@ -139,7 +139,7 @@ def _cmd_fetch_inner(config, db, tracker):
 
 def _cmd_digest_inner(config, db, tracker, dry_run=False):
     """Core digest logic, shared between cmd_digest and cmd_run."""
-    papers = db.get_all_papers()
+    papers = db.get_undigested_papers()
     if not papers:
         logger.info("No papers found. Run 'fetch' first.")
         return
@@ -268,6 +268,7 @@ def _cmd_digest_inner(config, db, tracker, dry_run=False):
         paper_ids = [p.db_id for p in top_papers]
         status = "delivered" if tg_ok else "partial_delivery"
         db.log_digest(paper_ids, status=status)
+        db.mark_papers_digested(paper_ids)
 
     logger.info(f"Markdown digest: {md_path}")
 
