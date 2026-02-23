@@ -28,7 +28,8 @@ CREATE TABLE IF NOT EXISTS papers (
     code_url TEXT,
     code_official INTEGER DEFAULT 0,
     created_at TEXT DEFAULT (datetime('now')),
-    updated_at TEXT DEFAULT (datetime('now'))
+    updated_at TEXT DEFAULT (datetime('now')),
+    digested_at TEXT
 );
 
 CREATE TABLE IF NOT EXISTS scores (
@@ -92,8 +93,9 @@ class Database:
     def init_schema(self):
         # Run migrations for existing databases before applying schema
         # (old scores table would cause index creation to fail on new columns)
-        from .migrate import migrate_scores_table
+        from .migrate import migrate_add_digested_at, migrate_scores_table
         migrate_scores_table(self.conn)
+        migrate_add_digested_at(self.conn)
 
         self.conn.executescript(SCHEMA)
         self.conn.execute("PRAGMA foreign_keys=ON")
@@ -181,6 +183,24 @@ class Database:
     def get_all_papers(self) -> list[Paper]:
         rows = self.conn.execute("SELECT * FROM papers ORDER BY published DESC").fetchall()
         return [self._row_to_paper(r) for r in rows]
+
+    def get_undigested_papers(self) -> list[Paper]:
+        """Get papers not yet included in any digest."""
+        rows = self.conn.execute(
+            "SELECT * FROM papers WHERE digested_at IS NULL ORDER BY published DESC"
+        ).fetchall()
+        return [self._row_to_paper(r) for r in rows]
+
+    def mark_papers_digested(self, paper_ids: list[int]):
+        """Mark papers as included in a digest."""
+        if not paper_ids:
+            return
+        placeholders = ",".join("?" * len(paper_ids))
+        self.conn.execute(
+            f"UPDATE papers SET digested_at = datetime('now') WHERE id IN ({placeholders})",
+            paper_ids,
+        )
+        self.conn.commit()
 
     def get_unenriched_papers(self) -> list[Paper]:
         """Papers that haven't been enriched (no citations data)."""

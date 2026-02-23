@@ -211,6 +211,75 @@ class TestUpdatedScores:
         db.close()
 
 
+class TestDigestedAt:
+    def test_new_paper_has_no_digested_at(self, tmp_path):
+        """A freshly inserted paper should appear in undigested papers."""
+        db = _setup_db(tmp_path)
+        db.upsert_paper(_make_paper())
+
+        undigested = db.get_undigested_papers()
+        assert len(undigested) == 1
+        assert undigested[0].title == "A Paper"
+        db.close()
+
+    def test_mark_papers_digested(self, tmp_path):
+        """Marking papers as digested removes them from undigested list."""
+        db = _setup_db(tmp_path)
+        id1 = db.upsert_paper(_make_paper(arxiv_id="2401.00001", title="Paper 1"))
+        id2 = db.upsert_paper(_make_paper(arxiv_id="2401.00002", title="Paper 2"))
+        id3 = db.upsert_paper(_make_paper(arxiv_id="2401.00003", title="Paper 3"))
+
+        db.mark_papers_digested([id1, id2])
+
+        undigested = db.get_undigested_papers()
+        assert len(undigested) == 1
+        assert undigested[0].title == "Paper 3"
+        db.close()
+
+    def test_get_undigested_papers_returns_newest_first(self, tmp_path):
+        """Undigested papers should be ordered by published DESC."""
+        db = _setup_db(tmp_path)
+        db.upsert_paper(
+            _make_paper(
+                arxiv_id="2401.00001",
+                title="Old Paper",
+                published=datetime(2024, 1, 1, tzinfo=timezone.utc),
+            )
+        )
+        db.upsert_paper(
+            _make_paper(
+                arxiv_id="2401.00003",
+                title="Newest Paper",
+                published=datetime(2024, 3, 1, tzinfo=timezone.utc),
+            )
+        )
+        db.upsert_paper(
+            _make_paper(
+                arxiv_id="2401.00002",
+                title="Middle Paper",
+                published=datetime(2024, 2, 1, tzinfo=timezone.utc),
+            )
+        )
+
+        undigested = db.get_undigested_papers()
+        assert len(undigested) == 3
+        assert undigested[0].title == "Newest Paper"
+        assert undigested[1].title == "Middle Paper"
+        assert undigested[2].title == "Old Paper"
+        db.close()
+
+    def test_mark_papers_digested_empty_list(self, tmp_path):
+        """Calling mark_papers_digested with empty list is a no-op."""
+        db = _setup_db(tmp_path)
+        db.upsert_paper(_make_paper())
+
+        db.mark_papers_digested([])
+
+        undigested = db.get_undigested_papers()
+        assert len(undigested) == 1
+        db.close()
+
+
 class TestMigration:
     def test_migrate_old_scores_table(self, tmp_path):
         """Test migration from old scores schema (relevance, quality, final) to new (quality, llm_rank)."""
