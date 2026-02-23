@@ -37,13 +37,35 @@ def _format_telegram_message(digest: Digest, config: Config) -> str:
     ]
 
     for entry in digest.entries[:TOP_N_TELEGRAM]:
-        title = _escape_markdown(entry.paper.title[:80])
-        lines.append(f"*{entry.rank}\\.*  {title}")
+        title = _escape_markdown(entry.paper.title[:100])
+        lines.append(f"*{entry.rank}\\.* *{title}*")
+
+        # Author + affiliation line
+        authors = entry.paper.authors
+        if len(authors) > 2:
+            author_str = f"{authors[0]} et al."
+        elif len(authors) == 2:
+            author_str = f"{authors[0]}, {authors[1]}"
+        else:
+            author_str = authors[0] if authors else ""
+        author_str = _escape_markdown(author_str)
+
+        affiliations = ""
+        if entry.summary and entry.summary.affiliations:
+            affiliations = _escape_markdown(entry.summary.affiliations)
+
+        if affiliations:
+            lines.append(f"_{author_str} \u00b7 {affiliations}_")
+        elif author_str:
+            lines.append(f"_{author_str}_")
+
         if entry.summary and entry.summary.one_liner:
             one_liner = _escape_markdown(entry.summary.one_liner)
-            lines.append(f"  _\\> {one_liner}_")
+            lines.append(f"\\> {one_liner}")
 
-    return "\n".join(lines)
+        lines.append("")  # blank line between entries
+
+    return "\n".join(lines).rstrip("\n")
 
 
 def deliver_telegram(digest: Digest, config: Config) -> bool:
