@@ -289,6 +289,14 @@ class Database:
         )
         self.conn.commit()
 
+    def get_latest_filter_result(self, paper_id: int) -> dict | None:
+        """Get the most recent filter result for a paper."""
+        row = self.conn.execute(
+            "SELECT * FROM paper_filter_results WHERE paper_id = ? ORDER BY id DESC LIMIT 1",
+            (paper_id,),
+        ).fetchone()
+        return dict(row) if row else None
+
     def get_filter_results(self, run_date: str | None = None) -> list[dict]:
         """Get all filter results, optionally for a specific date."""
         if run_date:

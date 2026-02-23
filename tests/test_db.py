@@ -117,6 +117,25 @@ class TestFilterResults:
         assert len(results) == 2
         db.close()
 
+    def test_get_latest_filter_result(self, tmp_path):
+        """Returns the most recent filter result for a paper."""
+        db = _setup_db(tmp_path)
+        paper_id = db.upsert_paper(_make_paper())
+        db.upsert_filter_result(paper_id, relevant=True, reason="First")
+        db.upsert_filter_result(paper_id, relevant=False, reason="Second")
+        result = db.get_latest_filter_result(paper_id)
+        assert result is not None
+        assert result["reason"] == "Second"
+        db.close()
+
+    def test_get_latest_filter_result_no_results(self, tmp_path):
+        """Returns None if paper has never been filtered."""
+        db = _setup_db(tmp_path)
+        paper_id = db.upsert_paper(_make_paper())
+        result = db.get_latest_filter_result(paper_id)
+        assert result is None
+        db.close()
+
 
 class TestUpdatedScores:
     def test_upsert_scores_with_llm_rank(self, tmp_path):

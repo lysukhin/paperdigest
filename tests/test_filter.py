@@ -459,3 +459,49 @@ class TestFilterBudget:
         r2 = f.filter_paper(_make_paper("2401.00002"))
         assert r2.relevant is True
         assert "budget" in r2.reason.lower()
+
+
+class TestFilterCaching:
+    """Tests for filter result caching — skip papers already judged."""
+
+    def test_skips_already_rejected_paper(self, tmp_path):
+        """Papers with a cached rejection are skipped without LLM call."""
+        config = _make_config()
+        db = Database(tmp_path / "test.db")
+        db.init_schema()
+        paper = _make_paper()
+        paper_id = db.upsert_paper(paper)
+        paper.db_id = paper_id
+
+        # Pre-populate filter result as rejected
+        db.upsert_filter_result(paper_id, relevant=False, reason="Off topic")
+
+        filt = PaperFilter(config, db)
+        relevant, rejected = filt.filter_papers([paper])
+
+        assert len(relevant) == 0
+        assert len(rejected) == 1
+        assert rejected[0].reason == "Off topic"
+        # No LLM call was made
+        assert filt.run_papers == 0
+        db.close()
+
+    def test_skips_already_relevant_paper(self, tmp_path):
+        """Papers with a cached relevant result are included without LLM call."""
+        config = _make_config()
+        db = Database(tmp_path / "test.db")
+        db.init_schema()
+        paper = _make_paper()
+        paper_id = db.upsert_paper(paper)
+        paper.db_id = paper_id
+
+        # Pre-populate filter result as relevant
+        db.upsert_filter_result(paper_id, relevant=True, reason="Good match")
+
+        filt = PaperFilter(config, db)
+        relevant, rejected = filt.filter_papers([paper])
+
+        assert len(relevant) == 1
+        assert len(rejected) == 0
+        assert filt.run_papers == 0
+        db.close()
