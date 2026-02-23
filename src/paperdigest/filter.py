@@ -182,6 +182,19 @@ class PaperFilter:
                 progress.set_cost(self.run_cost)
             else:
                 logger.info(f"Filtering [{i+1}/{len(papers)}] {paper.arxiv_id}")
+
+            # Check for cached filter result
+            if paper.db_id is not None:
+                cached = self.db.get_latest_filter_result(paper.db_id)
+                if cached is not None:
+                    if cached["relevant"]:
+                        relevant_papers.append(paper)
+                    else:
+                        rejected_results.append(
+                            FilterResult(paper=paper, relevant=False, reason=cached["reason"])
+                        )
+                    continue
+
             result = self.filter_paper(paper)
 
             # Store result in DB if paper has a db_id
