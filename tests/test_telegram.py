@@ -23,17 +23,19 @@ def _make_config(public_url: str | None = None) -> Config:
     )
 
 
-def _make_entry(rank: int, title: str = "Test Paper", one_liner: str = "", arxiv_id: str = "2401.00001") -> DigestEntry:
+def _make_entry(rank: int, title: str = "Test Paper", one_liner: str = "",
+                arxiv_id: str = "2401.00001", authors: list[str] | None = None,
+                affiliations: str = "") -> DigestEntry:
     """Create a digest entry for testing."""
     paper = Paper(
         arxiv_id=arxiv_id,
         title=title,
         abstract="Abstract text",
-        authors=["Author One", "Author Two"],
+        authors=authors or ["Author One", "Author Two"],
         published=datetime(2026, 2, 20, tzinfo=timezone.utc),
     )
     scores = Scores(quality=0.75, llm_rank=rank)
-    summary = Summary(one_liner=one_liner) if one_liner else None
+    summary = Summary(one_liner=one_liner, affiliations=affiliations) if (one_liner or affiliations) else None
     return DigestEntry(paper=paper, scores=scores, rank=rank, summary=summary)
 
 
@@ -104,9 +106,9 @@ class TestTelegramFormatting:
         msg = _format_telegram_message(digest, config)
         assert "Summary for paper" not in msg
 
-    def test_title_truncated_at_80_chars(self):
-        """Long titles are truncated."""
-        entry = _make_entry(rank=1, title="A" * 100)
+    def test_title_truncated_at_100_chars(self):
+        """Long titles are truncated at 100 characters."""
+        entry = _make_entry(rank=1, title="A" * 120)
         digest = Digest(
             date=datetime(2026, 2, 22, tzinfo=timezone.utc),
             topic_name="Test",
@@ -116,8 +118,8 @@ class TestTelegramFormatting:
         )
         config = _make_config()
         msg = _format_telegram_message(digest, config)
-        # 80 A's escaped, not 100
-        assert "A" * 81 not in msg
+        # 100 A's escaped, not 120
+        assert "A" * 101 not in msg
 
     def test_fewer_than_5_papers_shows_all(self):
         """When digest has fewer than 5 entries, show all."""
@@ -247,3 +249,87 @@ class TestTelegramDelivery:
                 second_payload = mock_post.call_args_list[1].kwargs.get("json") or mock_post.call_args_list[1][1].get("json")
                 assert "reply_markup" not in second_payload
                 assert "View Full Digest" in second_payload["text"]
+
+
+class TestTelegramAuthors:
+    def test_shows_first_author_et_al(self):
+        """Shows first author + et al. when >2 authors."""
+        entry = _make_entry(
+            rank=1, title="Paper A", one_liner="Summary",
+            authors=["Alice Smith", "Bob Jones", "Charlie Brown"],
+            affiliations="MIT, Google",
+        )
+        digest = Digest(
+            date=datetime(2026, 2, 22, tzinfo=timezone.utc),
+            topic_name="Test", entries=[entry],
+            total_collected=10, total_new=1,
+        )
+        config = _make_config()
+        msg = _format_telegram_message(digest, config)
+        assert "Alice Smith" in msg
+        assert "et al" in msg
+
+    def test_shows_two_authors_without_et_al(self):
+        """Shows both authors when exactly 2."""
+        entry = _make_entry(
+            rank=1, title="Paper A", one_liner="Summary",
+            authors=["Alice Smith", "Bob Jones"],
+            affiliations="Stanford",
+        )
+        digest = Digest(
+            date=datetime(2026, 2, 22, tzinfo=timezone.utc),
+            topic_name="Test", entries=[entry],
+            total_collected=10, total_new=1,
+        )
+        config = _make_config()
+        msg = _format_telegram_message(digest, config)
+        assert "Alice Smith" in msg
+        assert "Bob Jones" in msg
+        assert "et al" not in msg
+
+    def test_shows_affiliations(self):
+        """Affiliations from summary are displayed."""
+        entry = _make_entry(
+            rank=1, title="Paper A", one_liner="Summary",
+            affiliations="MIT, Google DeepMind",
+        )
+        digest = Digest(
+            date=datetime(2026, 2, 22, tzinfo=timezone.utc),
+            topic_name="Test", entries=[entry],
+            total_collected=10, total_new=1,
+        )
+        config = _make_config()
+        msg = _format_telegram_message(digest, config)
+        assert "MIT" in msg
+        assert "Google DeepMind" in msg
+
+    def test_no_affiliations_shows_authors_only(self):
+        """When no affiliations, just shows authors."""
+        entry = _make_entry(
+            rank=1, title="Paper A", one_liner="Summary",
+            authors=["Alice Smith", "Bob Jones"],
+            affiliations="",
+        )
+        digest = Digest(
+            date=datetime(2026, 2, 22, tzinfo=timezone.utc),
+            topic_name="Test", entries=[entry],
+            total_collected=10, total_new=1,
+        )
+        config = _make_config()
+        msg = _format_telegram_message(digest, config)
+        assert "Alice Smith" in msg
+
+    def test_no_summary_shows_authors_from_paper(self):
+        """When no summary (no affiliations), shows paper authors."""
+        entry = _make_entry(
+            rank=1, title="Paper A",
+            authors=["Alice Smith", "Bob Jones", "Charlie Brown"],
+        )
+        digest = Digest(
+            date=datetime(2026, 2, 22, tzinfo=timezone.utc),
+            topic_name="Test", entries=[entry],
+            total_collected=10, total_new=1,
+        )
+        config = _make_config()
+        msg = _format_telegram_message(digest, config)
+        assert "Alice Smith" in msg
