@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import sqlite3
 
@@ -53,5 +54,25 @@ def migrate_add_digested_at(conn: sqlite3.Connection):
         return
     logger.info("Adding digested_at column to papers table...")
     conn.execute("ALTER TABLE papers ADD COLUMN digested_at TEXT")
+
+    # Backfill: mark papers from previous digests as already digested
+    try:
+        rows = conn.execute("SELECT paper_ids, created_at FROM digests").fetchall()
+        backfilled = 0
+        for row in rows:
+            paper_ids = json.loads(row[0])
+            created_at = row[1]  # use the digest's creation time
+            if paper_ids:
+                placeholders = ",".join("?" * len(paper_ids))
+                conn.execute(
+                    f"UPDATE papers SET digested_at = ? WHERE id IN ({placeholders}) AND digested_at IS NULL",
+                    [created_at] + paper_ids,
+                )
+                backfilled += len(paper_ids)
+        if backfilled:
+            logger.info(f"Backfilled digested_at for {backfilled} papers from {len(rows)} previous digests")
+    except Exception:
+        logger.debug("Could not backfill digested_at (no digests table yet?)", exc_info=True)
+
     conn.commit()
     logger.info("digested_at migration complete")
