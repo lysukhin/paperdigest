@@ -31,7 +31,7 @@ def _refresh_usage_cache(config: Config):
     try:
         from .usage import update_usage_cache
 
-        update_usage_cache(config.openai_admin_key, config.base_dir)
+        update_usage_cache(config.openai_admin_key, config.db_path.parent)
     except Exception:
         logger.debug("Could not refresh usage cache", exc_info=True)
 
@@ -528,7 +528,7 @@ def cmd_stats(args):
     if config.openai_admin_key:
         from .usage import update_usage_cache
 
-        usage = update_usage_cache(config.openai_admin_key, config.base_dir)
+        usage = update_usage_cache(config.openai_admin_key, config.db_path.parent)
         if usage:
             oai_table = Table(
                 title=f"OpenAI Account ({usage['month']})",
