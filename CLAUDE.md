@@ -84,11 +84,13 @@ arXiv + Blogs + DBLP → Dedup → SQLite → LLM Filter → Semantic Scholar + 
 - **Enrichment toggle** — Semantic Scholar can be disabled via config (fresh papers have 0 citations); PWC enrichment is always on (local lookup)
 - **Configurable prompt instructions** — extra_instructions field on filter and summarizer configs appended to system prompts; allows steering LLM output without replacing base prompts
 - **Telegram as notification channel** — compact top-5 digest with inline keyboard button linking to full web digest; falls back to text link if Telegram rejects the button URL (e.g. non-public URLs); `web.public_url` controls the link target
+- **Once-per-digest papers** — `digested_at` column ensures each paper is processed and included in only one digest; filter results are cached to avoid re-spending LLM on already-judged papers
+- **Usage cache in data dir** — `usage_cache.json` stored alongside `papers.db` in `data/` so Docker volume sharing works between web and cron containers
 
 ### Database
 
 SQLite at `data/papers.db`. Key tables:
-- `papers` — canonical record per paper, unique on `arxiv_id`, indexed on `doi`
+- `papers` — canonical record per paper, unique on `arxiv_id`, indexed on `doi`; `digested_at TEXT` marks when paper was included in a digest (NULL = not yet digested)
 - `scores` — one row per paper, `quality REAL` + `llm_rank INTEGER` (1 = best, 0 = unranked)
 - `paper_filter_results` — per-paper filter decisions: `paper_id`, `run_date`, `relevant`, `reason`
 - `llm_usage` — per-run cost tracking with `run_id` unique constraint
@@ -130,6 +132,7 @@ Unit tests across 10 files — all with no external API calls:
 - `papers.db` — SQLite database
 - `digests/` — generated markdown digests (`digest_YYYY-MM-DD.md`)
 - `pwc_links.json` — Papers with Code lookup cache
+- `usage_cache.json` — cached OpenAI usage stats (shared between Docker containers)
 
 ## Secrets
 

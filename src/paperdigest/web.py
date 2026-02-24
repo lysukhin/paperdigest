@@ -143,7 +143,7 @@ def _get_stats(config: Config) -> dict:
 
     from .usage import read_usage_cache
 
-    usage = read_usage_cache(config.base_dir)
+    usage = read_usage_cache(config.db_path.parent)
     if usage:
         stats["openai_usage"] = usage
 
