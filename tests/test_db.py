@@ -353,6 +353,61 @@ class TestMigration:
             assert "final" not in columns
             assert "llm_rank" in columns
 
+    def test_migrate_backfills_digested_at_from_digests_table(self, tmp_path):
+        """Migration backfills digested_at for papers in previous digests."""
+        db_path = tmp_path / "backfill.db"
+        conn = sqlite3.connect(str(db_path))
+        conn.row_factory = sqlite3.Row
+        # Create schema WITHOUT digested_at (pre-migration state)
+        conn.executescript("""
+            CREATE TABLE papers (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                arxiv_id TEXT UNIQUE NOT NULL,
+                title TEXT NOT NULL,
+                abstract TEXT NOT NULL,
+                authors TEXT NOT NULL,
+                published TEXT NOT NULL,
+                updated TEXT, doi TEXT, categories TEXT, pdf_url TEXT,
+                citations INTEGER, max_hindex INTEGER, venue TEXT,
+                oa_pdf_url TEXT, code_url TEXT, code_official INTEGER DEFAULT 0,
+                created_at TEXT, updated_at TEXT
+            );
+            CREATE TABLE scores (
+                paper_id INTEGER PRIMARY KEY REFERENCES papers(id),
+                quality REAL NOT NULL,
+                llm_rank INTEGER NOT NULL DEFAULT 0,
+                scored_at TEXT DEFAULT (datetime('now'))
+            );
+            CREATE TABLE digests (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                date TEXT NOT NULL,
+                paper_ids TEXT NOT NULL,
+                delivery_status TEXT DEFAULT 'pending',
+                created_at TEXT DEFAULT (datetime('now'))
+            );
+        """)
+        # Insert 3 papers
+        for i in range(1, 4):
+            conn.execute(
+                "INSERT INTO papers (arxiv_id, title, abstract, authors, published) "
+                f"VALUES ('2401.{i:05d}', 'Paper {i}', 'Abstract', '[]', '2024-01-01')"
+            )
+        # Paper 1 and 2 were in a previous digest
+        conn.execute(
+            "INSERT INTO digests (date, paper_ids, delivery_status) VALUES (?, ?, ?)",
+            ("2024-01-15", "[1, 2]", "delivered"),
+        )
+        conn.commit()
+        conn.close()
+
+        # Open with Database which runs migration + backfill
+        with Database(db_path) as db:
+            db.init_schema()
+            # Papers 1 and 2 should be marked digested
+            undigested = db.get_undigested_papers()
+            assert len(undigested) == 1
+            assert undigested[0].arxiv_id == "2401.00003"
+
     def test_migration_idempotent(self, tmp_path):
         """Migration should be safe to run multiple times."""
         with Database(tmp_path / "test.db") as db:
