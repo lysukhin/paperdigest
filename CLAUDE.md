@@ -51,12 +51,12 @@ arXiv + Blogs + DBLP → Dedup → SQLite → LLM Filter → Semantic Scholar + 
 
 - **cli.py** — argparse-based CLI with 11 subcommands (`run`, `fetch`, `filter`, `enrich`, `score`, `digest`, `init`, `serve`, `stats`, `setup`, `clean`), global `-v` flag; `run` calls `fetch` then `digest`; `digest` orchestrates filter→enrich→score→summarize→rank
 - **config.py** — YAML loading into validated dataclasses; loads secrets from `.env` file (falls back to env vars: `LLM_API_KEY`, `SEMANTIC_SCHOLAR_API_KEY`, `OPENAI_ADMIN_KEY`, `TELEGRAM_*`); `topic.description` for LLM filter; `LLMConfig` split into `FilterLLMConfig` + `SummarizerLLMConfig`; `EnrichmentConfig` for toggling Semantic Scholar
-- **models.py** — core data models: `Paper`, `Scores`, `Summary`, `DigestEntry`, `Digest`, `FilterResult`; `Scores` has `quality` + `llm_rank` (no `relevance`/`final`); `Digest` has `rejected` field
-- **db.py** — SQLite with WAL mode; context manager (`with Database(...) as db:`); 5 tables (`papers`, `scores`, `digests`, `llm_usage`, `paper_filter_results`); upsert patterns, cost tracking
+- **models.py** — core data models: `Paper`, `Scores`, `Summary`, `DigestEntry`, `Digest`, `FilterResult`; `Scores` has `quality` + `llm_rank` (no `relevance`/`final`); `Digest` has `number` (auto-increment from DB) and `rejected` field
+- **db.py** — SQLite with WAL mode; context manager (`with Database(...) as db:`); 6 tables (`papers`, `scores`, `digests`, `llm_usage`, `paper_filter_results`, `paper_summaries`); upsert patterns, cost tracking
 - **filter.py** — LLM-based paper relevance filtering using cheap model (gpt-4o-mini); reads title+abstract against `topic.description`; binary relevant/not with reason; fail-open on errors; cost tracked separately with `filter_` prefix on `run_id`
 - **dedup.py** — 4-stage deduplication: exact arXiv ID → exact DOI → fuzzy title within batch → fuzzy title against DB (SequenceMatcher, 0.85 threshold)
 - **scoring.py** — quality score only (venue tier, h-index, citations, code, freshness); relevance scoring removed (handled by LLM filter)
-- **summarizer.py** — OpenAI-compatible LLM with structured JSON output; always uses full-text PDF (abstract fallback); adds `rank_papers()` method for LLM-based ranking of survivors; uses `config.llm.summarizer`; per-run and monthly cost caps with graceful degradation
+- **summarizer.py** — OpenAI-compatible LLM with structured JSON output; always uses full-text PDF (abstract fallback); adds `rank_papers()` method for LLM-based ranking of survivors; uses `config.llm.summarizer`; per-run and monthly cost caps with graceful degradation; caches summaries in `paper_summaries` table to avoid re-summarizing
 - **pdf.py** — PDF download and text extraction via PyMuPDF for full-text summarization
 - **collectors/** — abstract `BaseCollector` interface:
   - `arxiv.py` — arXiv API with query building, rate limiting (3s delay, 3 retries), per-query result count logging
@@ -64,10 +64,10 @@ arXiv + Blogs + DBLP → Dedup → SQLite → LLM Filter → Semantic Scholar + 
   - `waymo.py` — Waymo Research page scraper, extracts arXiv IDs from links
   - `wayve.py` — Wayve Science scraper (currently blocked by WAF, disabled in config)
   - `dblp.py` — DBLP conference proceedings search; covers CVPR, ICRA, IROS, ECCV, IV, ITSC, etc. (NeurIPS excluded — triggers DBLP API 500)
-- **web.py** — FastAPI read-only web dashboard with digest archive and digest viewer; renders markdown digests to HTML (uses `md_in_html` extension for `<details>` blocks); `WebConfig.public_url` used by Telegram for digest links
+- **web.py** — FastAPI read-only web dashboard with digest archive and digest viewer; renders markdown digests to HTML (uses `md_in_html` extension for `<details>` blocks); routes use digest number (`/digest/1`); `WebConfig.public_url` used by Telegram for digest links
 - **usage.py** — fetches real OpenAI token usage and USD costs via Admin API (`/v1/organization/usage/completions` + `/v1/organization/costs`); requires `OPENAI_ADMIN_KEY`
 - **enrichment/** — `semantic_scholar.py` (citations, h-index, venue, OA PDF) and `pwc.py` (code links via local JSON dump)
-- **delivery/** — `markdown.py` (sandboxed Jinja2 template at `templates/digest.md.j2`) and `telegram.py` (raw HTTP, MarkdownV2, compact top-5 format with inline keyboard button linking to web digest)
+- **delivery/** — `markdown.py` (sandboxed Jinja2 template at `templates/digest.md.j2`, files named `digest_NNN.md`) and `telegram.py` (raw HTTP, MarkdownV2, compact top-5 format with inline keyboard button linking to web digest by number)
 - **setup.py** — interactive setup wizard: offers `config.yaml.example` as default or custom topic; generates config.yaml, .env, Caddyfile, crontab; detects IP vs FQDN for Caddyfile (no TLS for IPs) and `public_url`; tests API connections; initializes DB
 
 ### Key Design Decisions
@@ -83,8 +83,10 @@ arXiv + Blogs + DBLP → Dedup → SQLite → LLM Filter → Semantic Scholar + 
 - **Individual API failures don't break the pipeline** — enrichment and summarization handle errors per-paper gracefully
 - **Enrichment toggle** — Semantic Scholar can be disabled via config (fresh papers have 0 citations); PWC enrichment is always on (local lookup)
 - **Configurable prompt instructions** — extra_instructions field on filter and summarizer configs appended to system prompts; allows steering LLM output without replacing base prompts
-- **Telegram as notification channel** — compact top-5 digest with inline keyboard button linking to full web digest; falls back to text link if Telegram rejects the button URL (e.g. non-public URLs); `web.public_url` controls the link target
+- **Telegram as notification channel** — compact top-5 digest with inline keyboard button linking to full web digest by number; falls back to text link if Telegram rejects the button URL (e.g. non-public URLs); `web.public_url` controls the link target
 - **Once-per-digest papers** — `digested_at` column ensures each paper is processed and included in only one digest; filter results are cached to avoid re-spending LLM on already-judged papers
+- **Idempotent pipeline** — LLM filter results cached in `paper_filter_results`, LLM summaries cached in `paper_summaries`; repeated `digest` runs skip already-processed papers
+- **Index-based digests** — digests use auto-incrementing numbers (`digest_001.md`) instead of dates; `log_digest()` returns digest number, delivery uses it for filenames and URLs
 - **Usage cache in data dir** — `usage_cache.json` stored alongside `papers.db` in `data/` so Docker volume sharing works between web and cron containers
 
 ### Database
@@ -92,7 +94,9 @@ arXiv + Blogs + DBLP → Dedup → SQLite → LLM Filter → Semantic Scholar + 
 SQLite at `data/papers.db`. Key tables:
 - `papers` — canonical record per paper, unique on `arxiv_id`, indexed on `doi`; `digested_at TEXT` marks when paper was included in a digest (NULL = not yet digested)
 - `scores` — one row per paper, `quality REAL` + `llm_rank INTEGER` (1 = best, 0 = unranked)
+- `digests` — one row per digest, `digest_number INTEGER` (auto-increment via MAX+1), used for filenames and URLs
 - `paper_filter_results` — per-paper filter decisions: `paper_id`, `run_date`, `relevant`, `reason`
+- `paper_summaries` — cached LLM summaries, one row per paper (avoids re-summarizing on repeated runs)
 - `llm_usage` — per-run cost tracking with `run_id` unique constraint
 
 ### Test Structure
@@ -130,7 +134,7 @@ Unit tests across 10 files — all with no external API calls:
 
 `data/` directory (gitignored) contains:
 - `papers.db` — SQLite database
-- `digests/` — generated markdown digests (`digest_YYYY-MM-DD.md`)
+- `digests/` — generated markdown digests (`digest_NNN.md`, e.g. `digest_001.md`)
 - `pwc_links.json` — Papers with Code lookup cache
 - `usage_cache.json` — cached OpenAI usage stats (shared between Docker containers)
 
