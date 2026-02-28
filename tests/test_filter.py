@@ -366,6 +366,38 @@ class TestFilterProgress:
         f.filter_papers([paper])
 
 
+class TestFilterExtraInstructions:
+    def test_extra_instructions_appended(self, db):
+        """Extra instructions are appended to filter system prompt."""
+        config = _make_config()
+        config.llm.filter.extra_instructions = "Focus on robotics applications"
+        filt = PaperFilter(config, db)
+        paper = Paper(
+            arxiv_id="2401.00001",
+            title="Test Paper",
+            abstract="Test abstract",
+            authors=["Author"],
+            published=datetime.now(timezone.utc),
+        )
+        messages = filt._build_messages(paper)
+        assert "Additional instructions:" in messages[0]["content"]
+        assert "Focus on robotics applications" in messages[0]["content"]
+
+    def test_no_extra_instructions(self, db):
+        """Without extra_instructions, prompt is unchanged."""
+        config = _make_config()
+        filt = PaperFilter(config, db)
+        paper = Paper(
+            arxiv_id="2401.00001",
+            title="Test Paper",
+            abstract="Test abstract",
+            authors=["Author"],
+            published=datetime.now(timezone.utc),
+        )
+        messages = filt._build_messages(paper)
+        assert "Additional instructions:" not in messages[0]["content"]
+
+
 class TestFilterBudget:
     """Tests for budget enforcement in filter."""
 

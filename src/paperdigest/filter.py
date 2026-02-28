@@ -101,6 +101,9 @@ class PaperFilter:
         system = FILTER_SYSTEM_PROMPT.format(
             description=self.config.topic.description,
         )
+        extra = self.config.llm.filter.extra_instructions
+        if extra:
+            system += f"\n\nAdditional instructions:\n{extra}"
         user = FILTER_USER_TEMPLATE.format(
             title=paper.title,
             abstract=paper.abstract,
