@@ -107,7 +107,6 @@ def _render_digest(config: Config, number: int) -> str | None:
     if not path.exists():
         return None
 
-    md = markdown.Markdown(extensions=["tables", "fenced_code"])
     text = path.read_text()
     # The markdown lib skips markdown inside HTML blocks like <details>.
     # Inject markdown="1" so md_in_html can process the inner content.
