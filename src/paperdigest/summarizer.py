@@ -177,6 +177,13 @@ class Summarizer:
 
     def summarize_paper(self, paper: Paper) -> Summary | None:
         """Summarize a single paper. Returns None on failure."""
+        # Check DB cache first
+        if paper.db_id is not None:
+            cached = self.db.get_summary(paper.db_id)
+            if cached is not None:
+                logger.info(f"Using cached summary for {paper.arxiv_id}")
+                return cached
+
         ok, reason = self._check_budget()
         if not ok:
             logger.warning(f"Skipping summary for {paper.arxiv_id}: {reason}")
@@ -220,7 +227,7 @@ class Summarizer:
             data = json.loads(content)
             self.run_papers += 1
 
-            return Summary(
+            summary = Summary(
                 one_liner=data.get("one_liner", ""),
                 affiliations=data.get("affiliations", ""),
                 method=data.get("method", ""),
@@ -230,6 +237,12 @@ class Summarizer:
                 ad_relevance=data.get("ad_relevance", ""),
                 limitations=data.get("limitations", ""),
             )
+
+            # Cache to DB
+            if paper.db_id is not None:
+                self.db.upsert_summary(paper.db_id, summary)
+
+            return summary
 
         except json.JSONDecodeError:
             logger.warning(f"Failed to parse LLM JSON for {paper.arxiv_id}")
