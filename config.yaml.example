@@ -95,7 +95,7 @@ scoring:
       - "T-RO"
 
 digest:
-  top_n: 20
+  top_n: 10
   summarize_top_n: 10
   output_dir: "data/digests"
 
@@ -131,7 +131,7 @@ delivery:
   markdown:
     enabled: true
   telegram:
-    enabled: false
+    enabled: true
 
 database:
   path: "data/papers.db"
