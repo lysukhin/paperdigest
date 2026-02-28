@@ -95,8 +95,7 @@ def deliver_telegram(digest: Digest, config: Config) -> bool:
     digest_url = None
     public_url = config.web.public_url
     if public_url:
-        date_str = digest.date.strftime("%Y-%m-%d")
-        digest_url = f"{public_url}/digest/{date_str}"
+        digest_url = f"{public_url}/digest/{digest.number}"
         payload["reply_markup"] = json.dumps({
             "inline_keyboard": [[
                 {"text": "\U0001f4d6 View Full Digest", "url": digest_url}

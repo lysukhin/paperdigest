@@ -39,7 +39,7 @@ def _make_entry(rank: int, title: str = "Test Paper", one_liner: str = "",
     return DigestEntry(paper=paper, scores=scores, rank=rank, summary=summary)
 
 
-def _make_digest(n_entries: int = 5, with_summaries: bool = True) -> Digest:
+def _make_digest(n_entries: int = 5, with_summaries: bool = True, number: int = 42) -> Digest:
     """Create a digest with N entries."""
     entries = []
     for i in range(1, n_entries + 1):
@@ -53,6 +53,7 @@ def _make_digest(n_entries: int = 5, with_summaries: bool = True) -> Digest:
     return Digest(
         date=datetime(2026, 2, 22, tzinfo=timezone.utc),
         topic_name="VLM/VLA for AD",
+        number=number,
         entries=entries,
         total_collected=45,
         total_new=12,
@@ -164,7 +165,7 @@ class TestTelegramDelivery:
                 payload = call_kwargs.kwargs.get("json") or call_kwargs[1].get("json")
                 assert "reply_markup" in payload
                 markup = json.loads(payload["reply_markup"])
-                assert markup["inline_keyboard"][0][0]["url"] == "https://digest.example.com/digest/2026-02-22"
+                assert markup["inline_keyboard"][0][0]["url"] == "https://digest.example.com/digest/42"
 
     def test_no_button_when_public_url_not_set(self):
         """When public_url is None, payload has no reply_markup."""
