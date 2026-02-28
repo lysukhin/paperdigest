@@ -7,7 +7,7 @@ import sqlite3
 from datetime import datetime
 from pathlib import Path
 
-from .models import Paper, Scores
+from .models import Paper, Scores, Summary
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS papers (
@@ -64,6 +64,19 @@ CREATE TABLE IF NOT EXISTS paper_filter_results (
     run_date TEXT NOT NULL,
     relevant INTEGER NOT NULL,
     reason TEXT NOT NULL DEFAULT '',
+    created_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS paper_summaries (
+    paper_id INTEGER PRIMARY KEY REFERENCES papers(id),
+    one_liner TEXT NOT NULL DEFAULT '',
+    affiliations TEXT NOT NULL DEFAULT '',
+    method TEXT NOT NULL DEFAULT '',
+    data_benchmarks TEXT NOT NULL DEFAULT '',
+    key_results TEXT NOT NULL DEFAULT '',
+    novelty TEXT NOT NULL DEFAULT '',
+    ad_relevance TEXT NOT NULL DEFAULT '',
+    limitations TEXT NOT NULL DEFAULT '',
     created_at TEXT DEFAULT (datetime('now'))
 );
 
@@ -322,6 +335,57 @@ class Database:
         query += " ORDER BY p.published DESC"
         rows = self.conn.execute(query, params).fetchall()
         return [(self._row_to_paper(row), row["reason"]) for row in rows]
+
+    # --- Summaries ---
+
+    def get_summary(self, paper_id: int) -> Summary | None:
+        """Get cached LLM summary for a paper."""
+        row = self.conn.execute(
+            "SELECT * FROM paper_summaries WHERE paper_id = ?", (paper_id,)
+        ).fetchone()
+        if not row:
+            return None
+        return Summary(
+            one_liner=row["one_liner"],
+            affiliations=row["affiliations"],
+            method=row["method"],
+            data_benchmarks=row["data_benchmarks"],
+            key_results=row["key_results"],
+            novelty=row["novelty"],
+            ad_relevance=row["ad_relevance"],
+            limitations=row["limitations"],
+        )
+
+    def upsert_summary(self, paper_id: int, summary: Summary):
+        """Store or update an LLM summary for a paper."""
+        self.conn.execute(
+            """INSERT INTO paper_summaries
+                (paper_id, one_liner, affiliations, method, data_benchmarks,
+                 key_results, novelty, ad_relevance, limitations)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(paper_id) DO UPDATE SET
+                one_liner=excluded.one_liner,
+                affiliations=excluded.affiliations,
+                method=excluded.method,
+                data_benchmarks=excluded.data_benchmarks,
+                key_results=excluded.key_results,
+                novelty=excluded.novelty,
+                ad_relevance=excluded.ad_relevance,
+                limitations=excluded.limitations,
+                created_at=datetime('now')""",
+            (
+                paper_id,
+                summary.one_liner,
+                summary.affiliations,
+                summary.method,
+                summary.data_benchmarks,
+                summary.key_results,
+                summary.novelty,
+                summary.ad_relevance,
+                summary.limitations,
+            ),
+        )
+        self.conn.commit()
 
     # --- Digests ---
 
