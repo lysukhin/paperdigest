@@ -35,12 +35,11 @@ def create_app(config: Config) -> FastAPI:
             },
         )
 
-    @app.get("/digest/{date}", response_class=HTMLResponse)
-    async def view_digest(request: Request, date: str):
-        # Validate date format to prevent path traversal
-        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", date):
-            return HTMLResponse("Invalid date format", status_code=400)
-        content = _render_digest(config, date)
+    @app.get("/digest/{number:int}", response_class=HTMLResponse)
+    async def view_digest(request: Request, number: int):
+        if number < 1:
+            return HTMLResponse("Invalid digest number", status_code=400)
+        content = _render_digest(config, number)
         if content is None:
             return HTMLResponse("Digest not found", status_code=404)
         return templates.TemplateResponse(
@@ -48,7 +47,7 @@ def create_app(config: Config) -> FastAPI:
             {
                 "request": request,
                 "content": content,
-                "date": date,
+                "number": number,
                 "topic": config.topic.name,
             },
         )
@@ -70,11 +69,11 @@ def _list_digests(config: Config) -> list[dict]:
 
 
 def _parse_digest_meta(path: Path) -> dict | None:
-    match = re.search(r"digest_(\d{4}-\d{2}-\d{2})", path.name)
+    match = re.search(r"digest_(\d+)", path.name)
     if not match:
         return None
 
-    date_str = match.group(1)
+    number = int(match.group(1))
     content = path.read_text()
 
     topic = ""
@@ -93,26 +92,18 @@ def _parse_digest_meta(path: Path) -> dict | None:
             if title:
                 first_papers.append(title)
 
-    # Format date nicely
-    try:
-        date_obj = datetime.strptime(date_str, "%Y-%m-%d")
-        display_date = date_obj.strftime("%B %d, %Y")
-    except ValueError:
-        display_date = date_str
-
     return {
-        "date": date_str,
-        "display_date": display_date,
+        "number": number,
         "topic": topic,
         "papers_count": papers_count,
         "preview_titles": first_papers,
     }
 
 
-def _render_digest(config: Config, date: str) -> str | None:
+def _render_digest(config: Config, number: int) -> str | None:
     import markdown
 
-    path = config.digest_dir / f"digest_{date}.md"
+    path = config.digest_dir / f"digest_{number:03d}.md"
     if not path.exists():
         return None
 
