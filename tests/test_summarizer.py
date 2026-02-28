@@ -494,6 +494,63 @@ class TestSummarizerExtraInstructions:
         assert "Additional instructions:" not in messages[0]["content"]
 
 
+class TestSummaryCaching:
+    """Tests for DB-backed summary caching."""
+
+    def test_returns_cached_summary_without_llm_call(self, db):
+        config = _make_config()
+        paper = _make_paper(db_id=None)
+        # Insert paper into DB to get db_id
+        paper.db_id = db.upsert_paper(paper)
+
+        # Pre-cache a summary
+        cached = Summary(one_liner="Cached result", method="Cached method")
+        db.upsert_summary(paper.db_id, cached)
+
+        s = Summarizer(config, db)
+        s._client = MagicMock()
+
+        result = s.summarize_paper(paper)
+
+        assert result is not None
+        assert result.one_liner == "Cached result"
+        assert result.method == "Cached method"
+        # LLM should NOT have been called
+        s._client.chat.completions.create.assert_not_called()
+
+    def test_caches_new_summary_to_db(self, db):
+        config = _make_config()
+        paper = _make_paper(db_id=None)
+        paper.db_id = db.upsert_paper(paper)
+
+        s = Summarizer(config, db)
+        s._client = MagicMock()
+        s._client.chat.completions.create.return_value = _make_llm_response(VALID_SUMMARY_JSON)
+
+        result = s.summarize_paper(paper)
+        assert result is not None
+
+        # Verify it was persisted to DB
+        cached = db.get_summary(paper.db_id)
+        assert cached is not None
+        assert cached.one_liner == result.one_liner
+
+    def test_no_caching_when_paper_has_no_db_id(self, db):
+        """Papers without db_id skip caching (shouldn't happen in practice)."""
+        config = _make_config()
+        paper = _make_paper()  # db_id=None by default
+        assert paper.db_id is None
+
+        s = Summarizer(config, db)
+        s._client = MagicMock()
+        s._client.chat.completions.create.return_value = _make_llm_response(VALID_SUMMARY_JSON)
+
+        result = s.summarize_paper(paper)
+        assert result is not None
+        # LLM was called since no caching possible
+        s._client.chat.completions.create.assert_called_once()
+
+
 class TestRanking:
     """Tests for rank_papers() LLM ranking."""
 
