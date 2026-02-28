@@ -77,6 +77,7 @@ class Digest:
 
     date: datetime
     topic_name: str
+    number: int = 0
     entries: list[DigestEntry] = field(default_factory=list)
     rejected: list[FilterResult] = field(default_factory=list)
     total_collected: int = 0
