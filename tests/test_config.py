@@ -7,6 +7,13 @@ import yaml
 
 from paperdigest.config import load_config
 
+MINIMAL_CONFIG = """\
+topic:
+  name: Test Topic
+  primary_keywords:
+    - keyword one
+"""
+
 
 def _write_config(tmp_path: Path, data: dict) -> Path:
     p = tmp_path / "config.yaml"
@@ -339,3 +346,19 @@ class TestScoringWithoutAlpha:
             "tier1": ["CVPR", "ICCV"],
             "tier2": ["ECCV", "ICRA"],
         }
+
+
+class TestEnrichmentConfig:
+    def test_default_semantic_scholar_enabled(self, tmp_path):
+        """Semantic Scholar enabled by default for backward compat."""
+        cfg_file = tmp_path / "config.yaml"
+        cfg_file.write_text(MINIMAL_CONFIG)
+        config = load_config(cfg_file)
+        assert config.enrichment.semantic_scholar_enabled is True
+
+    def test_semantic_scholar_disabled(self, tmp_path):
+        """Can disable Semantic Scholar via config."""
+        cfg_file = tmp_path / "config.yaml"
+        cfg_file.write_text(MINIMAL_CONFIG + "\nenrichment:\n  semantic_scholar:\n    enabled: false\n")
+        config = load_config(cfg_file)
+        assert config.enrichment.semantic_scholar_enabled is False

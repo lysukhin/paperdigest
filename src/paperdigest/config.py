@@ -44,6 +44,11 @@ class CollectionConfig:
 
 
 @dataclass
+class EnrichmentConfig:
+    semantic_scholar_enabled: bool = True
+
+
+@dataclass
 class QualityWeights:
     w_venue: float = 0.25
     w_author: float = 0.20
@@ -129,6 +134,7 @@ class DeliveryConfig:
 class Config:
     topic: TopicConfig
     collection: CollectionConfig = field(default_factory=CollectionConfig)
+    enrichment: EnrichmentConfig = field(default_factory=EnrichmentConfig)
     scoring: ScoringConfig = field(default_factory=ScoringConfig)
     llm: LLMConfig = field(default_factory=LLMConfig)
     digest: DigestConfig = field(default_factory=DigestConfig)
@@ -289,6 +295,8 @@ def load_config(path: str | Path) -> Config:
     _load_env_file(base_dir / ".env")
 
     coll = raw.get("collection", {})
+    enrich_raw = raw.get("enrichment", {}) or {}
+    ss_raw = enrich_raw.get("semantic_scholar", {}) or {}
     db_raw = raw.get("database", {})
     pwc_raw = raw.get("pwc", {})
 
@@ -316,6 +324,9 @@ def load_config(path: str | Path) -> Config:
                 venues=coll.get("conferences", {}).get("venues", []),
                 years_back=coll.get("conferences", {}).get("years_back", 1),
             ),
+        ),
+        enrichment=EnrichmentConfig(
+            semantic_scholar_enabled=ss_raw.get("enabled", True),
         ),
         scoring=scoring,
         llm=_build_llm(raw.get("llm", {})),
