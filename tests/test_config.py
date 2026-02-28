@@ -305,6 +305,20 @@ class TestWebConfig:
         config = load_config(path)
         assert config.web.public_url == "https://digest.example.com"
 
+    def test_web_public_url_adds_scheme_when_missing(self, tmp_path):
+        """public_url without scheme gets http:// prepended."""
+        path = _write_config(tmp_path, {
+            "topic": {
+                "name": "Test",
+                "primary_keywords": ["test"],
+            },
+            "web": {
+                "public_url": "127.0.0.1:8000",
+            },
+        })
+        config = load_config(path)
+        assert config.web.public_url == "http://127.0.0.1:8000"
+
 
 class TestScoringWithoutAlpha:
     def test_scoring_has_no_alpha(self, tmp_path):

@@ -238,6 +238,15 @@ def _build_delivery(d: dict) -> DeliveryConfig:
     )
 
 
+def _normalize_url(raw: str) -> str | None:
+    url = raw.strip().rstrip("/")
+    if not url:
+        return None
+    if not url.startswith(("http://", "https://")):
+        url = f"http://{url}"
+    return url
+
+
 def _load_env_file(env_path: Path) -> None:
     """Load variables from a .env file into os.environ.
 
@@ -343,7 +352,7 @@ def load_config(path: str | Path) -> Config:
         web=WebConfig(
             host=web_raw.get("host", "127.0.0.1"),
             port=web_raw.get("port", 8000),
-            public_url=web_raw.get("public_url", "").rstrip("/") or None,
+            public_url=_normalize_url(web_raw.get("public_url", "")),
         ),
         database=db_raw.get("path", "data/papers.db") if isinstance(db_raw, dict) else db_raw,
         pwc_links_path=pwc_raw.get("links_path", "data/pwc_links.json") if isinstance(pwc_raw, dict) else pwc_raw,
