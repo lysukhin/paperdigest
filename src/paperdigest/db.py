@@ -41,6 +41,7 @@ CREATE TABLE IF NOT EXISTS scores (
 
 CREATE TABLE IF NOT EXISTS digests (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    digest_number INTEGER NOT NULL,
     date TEXT NOT NULL,
     paper_ids TEXT NOT NULL,         -- JSON list of paper IDs
     delivery_status TEXT DEFAULT 'pending',
@@ -106,9 +107,10 @@ class Database:
     def init_schema(self):
         # Run migrations for existing databases before applying schema
         # (old scores table would cause index creation to fail on new columns)
-        from .migrate import migrate_add_digested_at, migrate_scores_table
+        from .migrate import migrate_add_digest_number, migrate_add_digested_at, migrate_scores_table
         migrate_scores_table(self.conn)
         migrate_add_digested_at(self.conn)
+        migrate_add_digest_number(self.conn)
 
         self.conn.executescript(SCHEMA)
         self.conn.execute("PRAGMA foreign_keys=ON")
@@ -390,12 +392,23 @@ class Database:
     # --- Digests ---
 
     def log_digest(self, paper_ids: list[int], status: str = "delivered") -> int:
-        cur = self.conn.execute(
-            "INSERT INTO digests (date, paper_ids, delivery_status) VALUES (?, ?, ?)",
-            (datetime.now().strftime("%Y-%m-%d"), json.dumps(paper_ids), status),
+        """Log a digest and return its digest number."""
+        row = self.conn.execute("SELECT COALESCE(MAX(digest_number), 0) FROM digests").fetchone()
+        next_number = row[0] + 1
+        self.conn.execute(
+            "INSERT INTO digests (digest_number, date, paper_ids, delivery_status) VALUES (?, ?, ?, ?)",
+            (next_number, datetime.now().strftime("%Y-%m-%d"), json.dumps(paper_ids), status),
         )
         self.conn.commit()
-        return cur.lastrowid
+        return next_number
+
+    def update_digest_status(self, digest_number: int, status: str):
+        """Update delivery status for a digest."""
+        self.conn.execute(
+            "UPDATE digests SET delivery_status = ? WHERE digest_number = ?",
+            (status, digest_number),
+        )
+        self.conn.commit()
 
     # --- LLM Usage ---
 
