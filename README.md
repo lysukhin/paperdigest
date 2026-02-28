@@ -29,7 +29,7 @@ python -m paperdigest init --skip-pwc
 python -m paperdigest run
 ```
 
-Output lands in `data/digests/digest_YYYY-MM-DD.md`.
+Output lands in `data/digests/digest_001.md` (index-based naming).
 
 ## Deploy to VPS (Docker)
 

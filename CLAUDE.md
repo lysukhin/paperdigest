@@ -53,11 +53,13 @@ arXiv + Blogs + DBLP → Dedup → SQLite → LLM Filter → Semantic Scholar + 
 - **config.py** — YAML loading into validated dataclasses; loads secrets from `.env` file (falls back to env vars: `LLM_API_KEY`, `SEMANTIC_SCHOLAR_API_KEY`, `OPENAI_ADMIN_KEY`, `TELEGRAM_*`); `topic.description` for LLM filter; `LLMConfig` split into `FilterLLMConfig` + `SummarizerLLMConfig`; `EnrichmentConfig` for toggling Semantic Scholar
 - **models.py** — core data models: `Paper`, `Scores`, `Summary`, `DigestEntry`, `Digest`, `FilterResult`; `Scores` has `quality` + `llm_rank` (no `relevance`/`final`); `Digest` has `number` (auto-increment from DB) and `rejected` field
 - **db.py** — SQLite with WAL mode; context manager (`with Database(...) as db:`); 6 tables (`papers`, `scores`, `digests`, `llm_usage`, `paper_filter_results`, `paper_summaries`); upsert patterns, cost tracking
-- **filter.py** — LLM-based paper relevance filtering using cheap model (gpt-4o-mini); reads title+abstract against `topic.description`; binary relevant/not with reason; fail-open on errors; cost tracked separately with `filter_` prefix on `run_id`
+- **filter.py** — LLM-based paper relevance filtering using smaller model (gpt-5-nano in shipped config); reads title+abstract against `topic.description`; binary relevant/not with reason; fail-open on errors; cost tracked separately with `filter_` prefix on `run_id`
 - **dedup.py** — 4-stage deduplication: exact arXiv ID → exact DOI → fuzzy title within batch → fuzzy title against DB (SequenceMatcher, 0.85 threshold)
 - **scoring.py** — quality score only (venue tier, h-index, citations, code, freshness); relevance scoring removed (handled by LLM filter)
 - **summarizer.py** — OpenAI-compatible LLM with structured JSON output; always uses full-text PDF (abstract fallback); adds `rank_papers()` method for LLM-based ranking of survivors; uses `config.llm.summarizer`; per-run and monthly cost caps with graceful degradation; caches summaries in `paper_summaries` table to avoid re-summarizing
 - **pdf.py** — PDF download and text extraction via PyMuPDF for full-text summarization
+- **progress.py** — Rich-based terminal progress tracker; `PipelineTracker` renders live stage table with progress bars, ETA, and cost; `NullTracker` for non-interactive environments; `create_tracker()` factory; used by `cli.py` for pipeline stages
+- **migrate.py** — DB schema migrations (`migrate_scores_table`, `migrate_add_digested_at`, `migrate_add_digest_number`); called by `Database.__init__` on every connection to ensure schema is up-to-date
 - **collectors/** — abstract `BaseCollector` interface:
   - `arxiv.py` — arXiv API with query building, rate limiting (3s delay, 3 retries), per-query result count logging
   - `nvidia.py` — NVIDIA Developer Blog via RSS feed, filtered by AV keywords
@@ -73,7 +75,7 @@ arXiv + Blogs + DBLP → Dedup → SQLite → LLM Filter → Semantic Scholar + 
 ### Key Design Decisions
 
 - **LLM filter replaces keyword scoring** — `topic.description` (natural language) tells the LLM what's relevant; keywords stay for arXiv query building only
-- **Two-tier LLM architecture** — cheap model (gpt-4o-mini) for binary filter, good model (gpt-5-nano) for full-text summary + ranking
+- **Two-tier LLM architecture** — smaller model (gpt-5-nano) for binary filter, capable model (gpt-5-mini) for full-text summary + ranking (configured in `config.yaml.example`; Python defaults in `FilterLLMConfig`/`SummarizerLLMConfig` may differ)
 - **Fail-open filter** — budget exhaustion or LLM errors treat papers as relevant
 - **Always full-text summarization** — PDF fetched for all survivors, abstract fallback
 - **Rejected papers tracked** — stored in `paper_filter_results` table, shown in digest footer
