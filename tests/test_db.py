@@ -408,11 +408,93 @@ class TestMigration:
             assert len(undigested) == 1
             assert undigested[0].arxiv_id == "2401.00003"
 
+    def test_migrate_backfills_digest_number(self, tmp_path):
+        """Migration assigns sequential digest_number to existing digests."""
+        db_path = tmp_path / "digest_num.db"
+        conn = sqlite3.connect(str(db_path))
+        conn.row_factory = sqlite3.Row
+        # Create old schema without digest_number
+        conn.executescript("""
+            CREATE TABLE papers (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                arxiv_id TEXT UNIQUE NOT NULL,
+                title TEXT NOT NULL,
+                abstract TEXT NOT NULL,
+                authors TEXT NOT NULL,
+                published TEXT NOT NULL,
+                updated TEXT, doi TEXT, categories TEXT, pdf_url TEXT,
+                citations INTEGER, max_hindex INTEGER, venue TEXT,
+                oa_pdf_url TEXT, code_url TEXT, code_official INTEGER DEFAULT 0,
+                created_at TEXT, updated_at TEXT, digested_at TEXT
+            );
+            CREATE TABLE scores (
+                paper_id INTEGER PRIMARY KEY REFERENCES papers(id),
+                quality REAL NOT NULL,
+                llm_rank INTEGER NOT NULL DEFAULT 0,
+                scored_at TEXT DEFAULT (datetime('now'))
+            );
+            CREATE TABLE digests (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                date TEXT NOT NULL,
+                paper_ids TEXT NOT NULL,
+                delivery_status TEXT DEFAULT 'pending',
+                created_at TEXT DEFAULT (datetime('now'))
+            );
+        """)
+        conn.execute("INSERT INTO digests (date, paper_ids) VALUES ('2024-01-01', '[1]')")
+        conn.execute("INSERT INTO digests (date, paper_ids) VALUES ('2024-01-02', '[2]')")
+        conn.commit()
+        conn.close()
+
+        with Database(db_path) as db:
+            db.init_schema()
+            rows = db.conn.execute(
+                "SELECT digest_number FROM digests ORDER BY digest_number"
+            ).fetchall()
+            assert [r[0] for r in rows] == [1, 2]
+
     def test_migration_idempotent(self, tmp_path):
         """Migration should be safe to run multiple times."""
         with Database(tmp_path / "test.db") as db:
             db.init_schema()
             db.init_schema()  # Second call should not fail
+
+
+class TestDigestNumbering:
+    def test_log_digest_returns_digest_number(self, tmp_path):
+        db = _setup_db(tmp_path)
+        p_id = db.upsert_paper(_make_paper())
+        number = db.log_digest([p_id], status="delivered")
+        assert number == 1
+        db.close()
+
+    def test_digest_numbers_auto_increment(self, tmp_path):
+        db = _setup_db(tmp_path)
+        p1 = db.upsert_paper(_make_paper(arxiv_id="2401.00001"))
+        p2 = db.upsert_paper(_make_paper(arxiv_id="2401.00002"))
+        n1 = db.log_digest([p1], status="delivered")
+        n2 = db.log_digest([p2], status="delivered")
+        assert n1 == 1
+        assert n2 == 2
+        db.close()
+
+    def test_update_digest_status(self, tmp_path):
+        db = _setup_db(tmp_path)
+        p_id = db.upsert_paper(_make_paper())
+        number = db.log_digest([p_id], status="pending")
+        db.update_digest_status(number, "delivered")
+        row = db.conn.execute(
+            "SELECT delivery_status FROM digests WHERE digest_number = ?", (number,)
+        ).fetchone()
+        assert row["delivery_status"] == "delivered"
+        db.close()
+
+    def test_get_next_digest_number_with_no_digests(self, tmp_path):
+        db = _setup_db(tmp_path)
+        p_id = db.upsert_paper(_make_paper())
+        number = db.log_digest([p_id])
+        assert number == 1
+        db.close()
 
 
 class TestSummaryPersistence:

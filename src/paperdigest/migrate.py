@@ -76,3 +76,25 @@ def migrate_add_digested_at(conn: sqlite3.Connection):
 
     conn.commit()
     logger.info("digested_at migration complete")
+
+
+def migrate_add_digest_number(conn: sqlite3.Connection):
+    """Add digest_number column to digests table."""
+    cursor = conn.execute("PRAGMA table_info(digests)")
+    columns = {row[1] for row in cursor.fetchall()}
+    if "digest_number" in columns:
+        logger.debug("digests table already has digest_number column")
+        return
+    if "date" not in columns:
+        # Table doesn't exist yet — schema creation will handle it
+        return
+    logger.info("Adding digest_number column to digests table...")
+    conn.execute("ALTER TABLE digests ADD COLUMN digest_number INTEGER")
+    # Backfill existing rows with sequential numbers
+    rows = conn.execute("SELECT id FROM digests ORDER BY created_at ASC, id ASC").fetchall()
+    for i, row in enumerate(rows, start=1):
+        conn.execute("UPDATE digests SET digest_number = ? WHERE id = ?", (i, row[0]))
+    if rows:
+        logger.info(f"Backfilled digest_number for {len(rows)} existing digests")
+    conn.commit()
+    logger.info("digest_number migration complete")
