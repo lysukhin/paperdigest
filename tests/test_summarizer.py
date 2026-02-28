@@ -462,6 +462,38 @@ class TestBuildMessages:
         )
 
 
+class TestSummarizerExtraInstructions:
+    def test_extra_instructions_appended(self, db):
+        """Extra instructions appended to summarizer system prompt."""
+        config = _make_config()
+        config.llm.summarizer.extra_instructions = "Include benchmark results in one_liner"
+        summarizer = Summarizer(config, db)
+        paper = Paper(
+            arxiv_id="2401.00001",
+            title="Test Paper",
+            abstract="Test abstract about driving.",
+            authors=["Author"],
+            published=datetime.now(timezone.utc),
+        )
+        messages = summarizer._build_messages(paper)
+        assert "Additional instructions:" in messages[0]["content"]
+        assert "Include benchmark results in one_liner" in messages[0]["content"]
+
+    def test_no_extra_instructions(self, db):
+        """Without extra_instructions, prompt is unchanged."""
+        config = _make_config()
+        summarizer = Summarizer(config, db)
+        paper = Paper(
+            arxiv_id="2401.00001",
+            title="Test Paper",
+            abstract="Test abstract.",
+            authors=["Author"],
+            published=datetime.now(timezone.utc),
+        )
+        messages = summarizer._build_messages(paper)
+        assert "Additional instructions:" not in messages[0]["content"]
+
+
 class TestRanking:
     """Tests for rank_papers() LLM ranking."""
 

@@ -162,10 +162,11 @@ def _cmd_digest_inner(config, db, tracker, dry_run=False):
 
     # Enrich survivors (if not already enriched)
     from .enrichment.pwc import enrich_with_pwc
-    from .enrichment.semantic_scholar import enrich_papers
 
     unenriched = [p for p in papers if p.citations is None]
-    if unenriched:
+    if unenriched and config.enrichment.semantic_scholar_enabled:
+        from .enrichment.semantic_scholar import enrich_papers
+
         with tracker.stage("Enrich", total=len(unenriched)) as stage:
             unenriched = enrich_papers(unenriched, config, progress=stage)
             unenriched = enrich_with_pwc(unenriched, config)
@@ -174,6 +175,16 @@ def _cmd_digest_inner(config, db, tracker, dry_run=False):
             papers = [db.get_paper_by_arxiv_id(p.arxiv_id) for p in papers]
             papers = [p for p in papers if p is not None]
             stage.set_detail(f"{len(unenriched)} enriched")
+    elif unenriched:
+        # Semantic Scholar disabled — still run PWC enrichment and mark as enriched
+        with tracker.stage("Enrich") as stage:
+            unenriched = enrich_with_pwc(unenriched, config)
+            for paper in unenriched:
+                paper.citations = 0
+                db.update_enrichment(paper)
+            papers = [db.get_paper_by_arxiv_id(p.arxiv_id) for p in papers]
+            papers = [p for p in papers if p is not None]
+            stage.set_detail(f"S2 disabled, {len(unenriched)} PWC-enriched")
     else:
         tracker.skip_stage("Enrich")
 
@@ -286,11 +297,16 @@ def cmd_enrich(args):
             return
 
         from .enrichment.pwc import enrich_with_pwc
-        from .enrichment.semantic_scholar import enrich_papers
 
-        with tracker.stage("Semantic Scholar", total=len(papers)) as stage:
-            papers = enrich_papers(papers, config, progress=stage)
-            stage.set_detail(f"{len(papers)} enriched")
+        if config.enrichment.semantic_scholar_enabled:
+            from .enrichment.semantic_scholar import enrich_papers
+
+            with tracker.stage("Semantic Scholar", total=len(papers)) as stage:
+                papers = enrich_papers(papers, config, progress=stage)
+                stage.set_detail(f"{len(papers)} enriched")
+        else:
+            logger.info("Semantic Scholar enrichment disabled in config")
+            tracker.skip_stage("Semantic Scholar")
 
         with tracker.stage("Papers with Code") as stage:
             papers = enrich_with_pwc(papers, config)

@@ -38,9 +38,14 @@ class ArxivCollector(BaseCollector):
         cutoff = datetime.now(timezone.utc) - timedelta(days=lookback)
 
         all_papers: dict[str, Paper] = {}
+        total_fetched = 0
 
-        for query in queries:
-            logger.info(f"Querying arXiv: {query[:80]}...")
+        for qi, query in enumerate(queries, 1):
+            # Extract keyword for readable log
+            kw_match = re.search(r'"([^"]+)"', query)
+            kw_label = kw_match.group(1) if kw_match else query[:40]
+            logger.info(f"arXiv query {qi}/{len(queries)}: \"{kw_label}\"")
+
             search = arxiv.Search(
                 query=query,
                 max_results=max_results,
@@ -48,8 +53,13 @@ class ArxivCollector(BaseCollector):
                 sort_order=arxiv.SortOrder.Descending,
             )
 
+            query_fetched = 0
+            query_kept = 0
+            query_dupes = 0
+
             try:
                 for result in self.client.results(search):
+                    query_fetched += 1
                     pub_date = result.published
                     if pub_date.tzinfo is None:
                         pub_date = pub_date.replace(tzinfo=timezone.utc)
@@ -57,10 +67,10 @@ class ArxivCollector(BaseCollector):
                         continue
 
                     aid = result.entry_id.split("/")[-1]
-                    # Strip version suffix (e.g. "2401.12345v2" -> "2401.12345")
                     aid = re.sub(r'v\d+$', '', aid)
 
                     if aid in all_papers:
+                        query_dupes += 1
                         continue
 
                     updated = result.updated
@@ -79,12 +89,22 @@ class ArxivCollector(BaseCollector):
                         pdf_url=result.pdf_url,
                     )
                     all_papers[aid] = paper
+                    query_kept += 1
             except Exception:
                 logger.exception(f"Error fetching arXiv query: {query[:60]}")
                 time.sleep(5)
 
+            total_fetched += query_fetched
+            logger.info(
+                f"  → {query_fetched} fetched, {query_kept} new, "
+                f"{query_dupes} cross-query dupes"
+            )
+
         papers = list(all_papers.values())
-        logger.info(f"Collected {len(papers)} papers from arXiv")
+        logger.info(
+            f"Collected {len(papers)} unique papers from arXiv "
+            f"({total_fetched} total fetched)"
+        )
         return papers
 
     def _build_queries(

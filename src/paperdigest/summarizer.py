@@ -166,6 +166,10 @@ class Summarizer:
                 title=paper.title, abstract=paper.abstract
             )
 
+        extra = self.llm_cfg.extra_instructions
+        if extra:
+            system += f"\n\nAdditional instructions:\n{extra}"
+
         return [
             {"role": "system", "content": system},
             {"role": "user", "content": user},

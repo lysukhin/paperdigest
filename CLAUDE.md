@@ -50,7 +50,7 @@ arXiv + Blogs + DBLP → Dedup → SQLite → LLM Filter → Semantic Scholar + 
 ### Package Layout (`src/paperdigest/`)
 
 - **cli.py** — argparse-based CLI with 11 subcommands (`run`, `fetch`, `filter`, `enrich`, `score`, `digest`, `init`, `serve`, `stats`, `setup`, `clean`), global `-v` flag; `run` calls `fetch` then `digest`; `digest` orchestrates filter→enrich→score→summarize→rank
-- **config.py** — YAML loading into validated dataclasses; loads secrets from `.env` file (falls back to env vars: `LLM_API_KEY`, `SEMANTIC_SCHOLAR_API_KEY`, `OPENAI_ADMIN_KEY`, `TELEGRAM_*`); `topic.description` for LLM filter; `LLMConfig` split into `FilterLLMConfig` + `SummarizerLLMConfig`
+- **config.py** — YAML loading into validated dataclasses; loads secrets from `.env` file (falls back to env vars: `LLM_API_KEY`, `SEMANTIC_SCHOLAR_API_KEY`, `OPENAI_ADMIN_KEY`, `TELEGRAM_*`); `topic.description` for LLM filter; `LLMConfig` split into `FilterLLMConfig` + `SummarizerLLMConfig`; `EnrichmentConfig` for toggling Semantic Scholar
 - **models.py** — core data models: `Paper`, `Scores`, `Summary`, `DigestEntry`, `Digest`, `FilterResult`; `Scores` has `quality` + `llm_rank` (no `relevance`/`final`); `Digest` has `rejected` field
 - **db.py** — SQLite with WAL mode; context manager (`with Database(...) as db:`); 5 tables (`papers`, `scores`, `digests`, `llm_usage`, `paper_filter_results`); upsert patterns, cost tracking
 - **filter.py** — LLM-based paper relevance filtering using cheap model (gpt-4o-mini); reads title+abstract against `topic.description`; binary relevant/not with reason; fail-open on errors; cost tracked separately with `filter_` prefix on `run_id`
@@ -59,7 +59,7 @@ arXiv + Blogs + DBLP → Dedup → SQLite → LLM Filter → Semantic Scholar + 
 - **summarizer.py** — OpenAI-compatible LLM with structured JSON output; always uses full-text PDF (abstract fallback); adds `rank_papers()` method for LLM-based ranking of survivors; uses `config.llm.summarizer`; per-run and monthly cost caps with graceful degradation
 - **pdf.py** — PDF download and text extraction via PyMuPDF for full-text summarization
 - **collectors/** — abstract `BaseCollector` interface:
-  - `arxiv.py` — arXiv API with query building, rate limiting (3s delay, 3 retries)
+  - `arxiv.py` — arXiv API with query building, rate limiting (3s delay, 3 retries), per-query result count logging
   - `nvidia.py` — NVIDIA Developer Blog via RSS feed, filtered by AV keywords
   - `waymo.py` — Waymo Research page scraper, extracts arXiv IDs from links
   - `wayve.py` — Wayve Science scraper (currently blocked by WAF, disabled in config)
@@ -81,6 +81,8 @@ arXiv + Blogs + DBLP → Dedup → SQLite → LLM Filter → Semantic Scholar + 
 - **Local PWC lookup** — downloads full JSON dump once (`init`), then does instant local lookups instead of per-paper API calls
 - **Scoring is configurable** — quality weights, venue tiers in `config.yaml`
 - **Individual API failures don't break the pipeline** — enrichment and summarization handle errors per-paper gracefully
+- **Enrichment toggle** — Semantic Scholar can be disabled via config (fresh papers have 0 citations); PWC enrichment is always on (local lookup)
+- **Configurable prompt instructions** — extra_instructions field on filter and summarizer configs appended to system prompts; allows steering LLM output without replacing base prompts
 - **Telegram as notification channel** — compact top-5 digest with inline keyboard button linking to full web digest; falls back to text link if Telegram rejects the button URL (e.g. non-public URLs); `web.public_url` controls the link target
 
 ### Database

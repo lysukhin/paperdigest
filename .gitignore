@@ -13,3 +13,4 @@ dev/
 usage_cache.json
 .playwright-mcp/
 .serena/
+.worktrees/

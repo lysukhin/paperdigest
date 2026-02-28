@@ -7,6 +7,13 @@ import yaml
 
 from paperdigest.config import load_config
 
+MINIMAL_CONFIG = """\
+topic:
+  name: Test Topic
+  primary_keywords:
+    - keyword one
+"""
+
 
 def _write_config(tmp_path: Path, data: dict) -> Path:
     p = tmp_path / "config.yaml"
@@ -339,3 +346,40 @@ class TestScoringWithoutAlpha:
             "tier1": ["CVPR", "ICCV"],
             "tier2": ["ECCV", "ICRA"],
         }
+
+
+class TestExtraInstructions:
+    def test_default_extra_instructions_none(self, tmp_path):
+        cfg_file = tmp_path / "config.yaml"
+        cfg_file.write_text(MINIMAL_CONFIG)
+        config = load_config(cfg_file)
+        assert config.llm.filter.extra_instructions is None
+        assert config.llm.summarizer.extra_instructions is None
+
+    def test_filter_extra_instructions(self, tmp_path):
+        cfg_file = tmp_path / "config.yaml"
+        cfg_file.write_text(MINIMAL_CONFIG + '\nllm:\n  filter:\n    extra_instructions: "Focus on robotics"\n')
+        config = load_config(cfg_file)
+        assert config.llm.filter.extra_instructions == "Focus on robotics"
+
+    def test_summarizer_extra_instructions(self, tmp_path):
+        cfg_file = tmp_path / "config.yaml"
+        cfg_file.write_text(MINIMAL_CONFIG + '\nllm:\n  summarizer:\n    extra_instructions: "Include benchmark results in one_liner"\n')
+        config = load_config(cfg_file)
+        assert config.llm.summarizer.extra_instructions == "Include benchmark results in one_liner"
+
+
+class TestEnrichmentConfig:
+    def test_default_semantic_scholar_enabled(self, tmp_path):
+        """Semantic Scholar enabled by default for backward compat."""
+        cfg_file = tmp_path / "config.yaml"
+        cfg_file.write_text(MINIMAL_CONFIG)
+        config = load_config(cfg_file)
+        assert config.enrichment.semantic_scholar_enabled is True
+
+    def test_semantic_scholar_disabled(self, tmp_path):
+        """Can disable Semantic Scholar via config."""
+        cfg_file = tmp_path / "config.yaml"
+        cfg_file.write_text(MINIMAL_CONFIG + "\nenrichment:\n  semantic_scholar:\n    enabled: false\n")
+        config = load_config(cfg_file)
+        assert config.enrichment.semantic_scholar_enabled is False

@@ -56,6 +56,10 @@ collection:
       - ITSC
       # NeurIPS excluded — DBLP API returns 500 for this venue
 
+enrichment:
+  semantic_scholar:
+    enabled: false  # set true to fetch citations/h-index (slow, 0 for fresh papers)
+
 scoring:
   quality:
     w_venue: 0.25
@@ -102,6 +106,7 @@ llm:
     base_url: "https://api.openai.com/v1"
     temperature:
     max_completion_tokens: 1024
+    extra_instructions:  # optional: appended to filter system prompt
     cost_control:
       max_cost_per_run: 0.10
       max_cost_per_month: 3.00
@@ -115,6 +120,7 @@ llm:
     max_completion_tokens: 16384
     max_text_chars: 50000
     language: "English"
+    extra_instructions: "Include main benchmark names and key quantitative results in one_liner. In data_benchmarks, clarify whether real-world or simulated data was used."
     cost_control:
       max_cost_per_run: 0.50
       max_cost_per_month: 10.00

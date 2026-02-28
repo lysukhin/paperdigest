@@ -44,6 +44,11 @@ class CollectionConfig:
 
 
 @dataclass
+class EnrichmentConfig:
+    semantic_scholar_enabled: bool = True
+
+
+@dataclass
 class QualityWeights:
     w_venue: float = 0.25
     w_author: float = 0.20
@@ -74,6 +79,7 @@ class FilterLLMConfig:
     base_url: str = "https://api.openai.com/v1"
     temperature: float | None = None
     max_completion_tokens: int | None = 256
+    extra_instructions: str | None = None
     cost_control: CostControl = field(default_factory=CostControl)
 
 
@@ -86,6 +92,7 @@ class SummarizerLLMConfig:
     max_completion_tokens: int | None = 16384
     max_text_chars: int = 50000
     language: str = "Russian"
+    extra_instructions: str | None = None
     cost_control: CostControl = field(default_factory=CostControl)
 
 
@@ -129,6 +136,7 @@ class DeliveryConfig:
 class Config:
     topic: TopicConfig
     collection: CollectionConfig = field(default_factory=CollectionConfig)
+    enrichment: EnrichmentConfig = field(default_factory=EnrichmentConfig)
     scoring: ScoringConfig = field(default_factory=ScoringConfig)
     llm: LLMConfig = field(default_factory=LLMConfig)
     digest: DigestConfig = field(default_factory=DigestConfig)
@@ -204,6 +212,7 @@ def _build_llm(d: dict) -> LLMConfig:
             base_url=filter_raw.get("base_url", "https://api.openai.com/v1"),
             temperature=filter_raw.get("temperature"),
             max_completion_tokens=filter_raw.get("max_completion_tokens", 256),
+            extra_instructions=filter_raw.get("extra_instructions"),
             cost_control=CostControl(**filter_cc),
         ),
         summarizer=SummarizerLLMConfig(
@@ -214,6 +223,7 @@ def _build_llm(d: dict) -> LLMConfig:
             max_completion_tokens=summ_raw.get("max_completion_tokens", 16384),
             max_text_chars=summ_raw.get("max_text_chars", 50000),
             language=summ_raw.get("language", "Russian"),
+            extra_instructions=summ_raw.get("extra_instructions"),
             cost_control=CostControl(**summ_cc),
         ),
     )
@@ -289,6 +299,8 @@ def load_config(path: str | Path) -> Config:
     _load_env_file(base_dir / ".env")
 
     coll = raw.get("collection", {})
+    enrich_raw = raw.get("enrichment", {}) or {}
+    ss_raw = enrich_raw.get("semantic_scholar", {}) or {}
     db_raw = raw.get("database", {})
     pwc_raw = raw.get("pwc", {})
 
@@ -316,6 +328,9 @@ def load_config(path: str | Path) -> Config:
                 venues=coll.get("conferences", {}).get("venues", []),
                 years_back=coll.get("conferences", {}).get("years_back", 1),
             ),
+        ),
+        enrichment=EnrichmentConfig(
+            semantic_scholar_enabled=ss_raw.get("enabled", True),
         ),
         scoring=scoring,
         llm=_build_llm(raw.get("llm", {})),
