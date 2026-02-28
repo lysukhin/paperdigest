@@ -177,9 +177,9 @@
 {% if digests %}
 <div class="digest-list">
     {% for d in digests %}
-    <a href="/digest/{{ d.date }}" class="digest-item">
+    <a href="/digest/{{ d.number }}" class="digest-item">
         <div>
-            <div class="digest-date">{{ d.display_date }}</div>
+            <div class="digest-date">#{{ d.number }}</div>
             {% if d.preview_titles %}
             <ul class="digest-previews">
                 {% for title in d.preview_titles %}
