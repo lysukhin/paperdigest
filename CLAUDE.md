@@ -150,6 +150,8 @@ Copy `.env.example` to `.env` and fill in values. Copy `config.yaml.example` to 
 - Blog/DBLP collectors handle API failures gracefully (return empty list, pipeline continues)
 - LLM filter uses `config.llm.filter.*`, summarizer uses `config.llm.summarizer.*`
 - LLM config supports `null` temperature and `max_completion_tokens` — omitted from API call when null (required for reasoning models like gpt-5-nano)
+- YAML keys with no children parse as `None` in Python — always guard with `or {}` (e.g., `raw.get("section", {}) or {}`)
 - Filter has `filter_` prefix on `run_id` for cost tracking separation
+- `extra_instructions` on filter/summarizer configs appends to system prompt as `"\n\nAdditional instructions:\n{text}"` — keeps base prompts intact
 - `Scores.llm_rank` — 1 = best, 0 = unranked
 - Telegram inline button requires public HTTPS URL; `http://127.0.0.1` works for local dev, `localhost` does not (Telegram client limitation)
