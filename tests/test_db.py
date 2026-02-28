@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 import pytest
 
 from paperdigest.db import Database
-from paperdigest.models import Paper, Scores
+from paperdigest.models import Paper, Scores, Summary
 
 
 def _make_paper(
@@ -413,3 +413,47 @@ class TestMigration:
         with Database(tmp_path / "test.db") as db:
             db.init_schema()
             db.init_schema()  # Second call should not fail
+
+
+class TestSummaryPersistence:
+    def test_upsert_and_get_summary(self, tmp_path):
+        db = _setup_db(tmp_path)
+        paper_id = db.upsert_paper(_make_paper())
+        summary = Summary(
+            one_liner="A novel approach",
+            affiliations="MIT",
+            method="We propose X",
+            data_benchmarks="nuScenes",
+            key_results="95% accuracy",
+            novelty="First to do Y",
+            ad_relevance="Driving perception",
+            limitations="Simulation only",
+        )
+        db.upsert_summary(paper_id, summary)
+        result = db.get_summary(paper_id)
+        assert result is not None
+        assert result.one_liner == "A novel approach"
+        assert result.affiliations == "MIT"
+        assert result.method == "We propose X"
+        assert result.data_benchmarks == "nuScenes"
+        assert result.key_results == "95% accuracy"
+        assert result.novelty == "First to do Y"
+        assert result.ad_relevance == "Driving perception"
+        assert result.limitations == "Simulation only"
+        db.close()
+
+    def test_get_summary_returns_none_when_missing(self, tmp_path):
+        db = _setup_db(tmp_path)
+        paper_id = db.upsert_paper(_make_paper())
+        result = db.get_summary(paper_id)
+        assert result is None
+        db.close()
+
+    def test_upsert_summary_overwrites(self, tmp_path):
+        db = _setup_db(tmp_path)
+        paper_id = db.upsert_paper(_make_paper())
+        db.upsert_summary(paper_id, Summary(one_liner="Old"))
+        db.upsert_summary(paper_id, Summary(one_liner="New"))
+        result = db.get_summary(paper_id)
+        assert result.one_liner == "New"
+        db.close()
