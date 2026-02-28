@@ -27,7 +27,7 @@ def deliver_markdown(digest: Digest, config: Config) -> Path:
     output_dir = config.digest_dir
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    filename = f"digest_{digest.date.strftime('%Y-%m-%d')}.md"
+    filename = f"digest_{digest.number:03d}.md"
     output_path = output_dir / filename
 
     content = render_digest(digest, config)
