@@ -257,6 +257,11 @@ def _cmd_digest_inner(config, db, tracker, dry_run=False):
     from .delivery.markdown import deliver_markdown
 
     with tracker.stage("Deliver") as stage:
+        # Log digest first to get the number
+        paper_ids = [p.db_id for p in top_papers]
+        digest_number = db.log_digest(paper_ids, status="pending")
+        digest.number = digest_number
+
         md_path = deliver_markdown(digest, config)
         stage.set_detail(str(md_path))
 
@@ -265,9 +270,8 @@ def _cmd_digest_inner(config, db, tracker, dry_run=False):
             from .delivery.telegram import deliver_telegram
             tg_ok = deliver_telegram(digest, config)
 
-        paper_ids = [p.db_id for p in top_papers]
         status = "delivered" if tg_ok else "partial_delivery"
-        db.log_digest(paper_ids, status=status)
+        db.update_digest_status(digest_number, status)
         db.mark_papers_digested(paper_ids)
 
     logger.info(f"Markdown digest: {md_path}")
