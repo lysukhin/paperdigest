@@ -160,23 +160,11 @@ def _cmd_digest_inner(config, db, tracker, dry_run=False):
     else:
         tracker.skip_stage("Filter")
 
-    # Enrich survivors (if not already enriched)
+    # Enrich survivors with PWC code links
     from .enrichment.pwc import enrich_with_pwc
 
     unenriched = [p for p in papers if p.citations is None]
-    if unenriched and config.enrichment.semantic_scholar_enabled:
-        from .enrichment.semantic_scholar import enrich_papers
-
-        with tracker.stage("Enrich", total=len(unenriched)) as stage:
-            unenriched = enrich_papers(unenriched, config, progress=stage)
-            unenriched = enrich_with_pwc(unenriched, config)
-            for paper in unenriched:
-                db.update_enrichment(paper)
-            papers = [db.get_paper_by_arxiv_id(p.arxiv_id) for p in papers]
-            papers = [p for p in papers if p is not None]
-            stage.set_detail(f"{len(unenriched)} enriched")
-    elif unenriched:
-        # Semantic Scholar disabled — still run PWC enrichment and mark as enriched
+    if unenriched:
         with tracker.stage("Enrich") as stage:
             unenriched = enrich_with_pwc(unenriched, config)
             for paper in unenriched:
@@ -184,7 +172,7 @@ def _cmd_digest_inner(config, db, tracker, dry_run=False):
                 db.update_enrichment(paper)
             papers = [db.get_paper_by_arxiv_id(p.arxiv_id) for p in papers]
             papers = [p for p in papers if p is not None]
-            stage.set_detail(f"S2 disabled, {len(unenriched)} PWC-enriched")
+            stage.set_detail(f"{len(unenriched)} PWC-enriched")
     else:
         tracker.skip_stage("Enrich")
 
@@ -244,6 +232,9 @@ def _cmd_digest_inner(config, db, tracker, dry_run=False):
         entries.append(DigestEntry(paper=p, scores=s, rank=rank, summary=summary))
 
     total_papers = db.get_paper_count()
+    all_papers = [e.paper for e in entries]
+    date_from = min((p.published for p in all_papers), default=None)
+    date_to = max((p.published for p in all_papers), default=None)
     digest = Digest(
         date=datetime.now(timezone.utc),
         topic_name=config.topic.name,
@@ -251,6 +242,8 @@ def _cmd_digest_inner(config, db, tracker, dry_run=False):
         rejected=rejected_results,
         total_collected=total_papers,
         total_new=len(entries),
+        date_from=date_from,
+        date_to=date_to,
     )
 
     # Deliver
@@ -302,16 +295,6 @@ def cmd_enrich(args):
             return
 
         from .enrichment.pwc import enrich_with_pwc
-
-        if config.enrichment.semantic_scholar_enabled:
-            from .enrichment.semantic_scholar import enrich_papers
-
-            with tracker.stage("Semantic Scholar", total=len(papers)) as stage:
-                papers = enrich_papers(papers, config, progress=stage)
-                stage.set_detail(f"{len(papers)} enriched")
-        else:
-            logger.info("Semantic Scholar enrichment disabled in config")
-            tracker.skip_stage("Semantic Scholar")
 
         with tracker.stage("Papers with Code") as stage:
             papers = enrich_with_pwc(papers, config)

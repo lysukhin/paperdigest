@@ -82,3 +82,5 @@ class Digest:
     rejected: list[FilterResult] = field(default_factory=list)
     total_collected: int = 0
     total_new: int = 0
+    date_from: datetime | None = None
+    date_to: datetime | None = None

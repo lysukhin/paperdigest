@@ -1,6 +1,6 @@
 # Paper Digest: {{ digest.topic_name }}
 
-**Date:** {{ digest.date.strftime('%Y-%m-%d') }}
+**Date:** {{ digest.date.strftime('%Y-%m-%d') }}{% if digest.date_from and digest.date_to %} | **Papers from:** {{ digest.date_from.strftime('%Y-%m-%d') }} to {{ digest.date_to.strftime('%Y-%m-%d') }}{% endif %}
 **Papers collected:** {{ digest.total_collected }} | **New:** {{ digest.total_new }} | **Ranked:** {{ digest.entries | length }}{% if digest.rejected %} | **Filtered out:** {{ digest.rejected | length }}{% endif %}
 
 ---

@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**paperdigest** — an automated research paper digest system that fetches papers from arXiv, conference proceedings (DBLP), and lab blogs (NVIDIA, Waymo), filters them for relevance using a cheap LLM, enriches survivors with citation/code data (Semantic Scholar, Papers with Code), scores by quality, generates full-text LLM summaries with ranking, and delivers digests as Markdown files, Telegram messages, or a web dashboard. Currently configured for VLM/VLA for Autonomous Driving but works for any research topic via `config.yaml`.
+**paperdigest** — an automated research paper digest system that fetches papers from arXiv, conference proceedings (DBLP), and lab blogs (NVIDIA, Waymo), filters them for relevance using a cheap LLM, enriches survivors with code data (Papers with Code), scores by quality, generates full-text LLM summaries with ranking, and delivers digests as Markdown files, Telegram messages, or a web dashboard. Currently configured for VLM/VLA for Autonomous Driving but works for any research topic via `config.yaml`.
 
 ## Commands
 
@@ -29,7 +29,7 @@ python -m paperdigest init --skip-pwc     # create DB, optionally download PWC l
 python -m paperdigest run                  # full pipeline: fetch → digest
 python -m paperdigest fetch                # collect papers from arXiv
 python -m paperdigest filter               # run LLM relevance filtering
-python -m paperdigest enrich               # add Semantic Scholar + PWC data
+python -m paperdigest enrich               # add PWC data
 python -m paperdigest score                # compute quality scores
 python -m paperdigest digest --dry-run     # generate digest without delivering (runs filter→enrich→score→summarize→rank)
 python -m paperdigest serve                # start web dashboard (localhost:8000)
@@ -43,19 +43,19 @@ python -m paperdigest -v <subcommand>      # verbose/debug logging
 
 ### Pipeline Flow
 ```
-arXiv + Blogs + DBLP → Dedup → SQLite → LLM Filter → Semantic Scholar + PWC → Quality Score → [LLM Summary + Rank] → Markdown / Telegram / Web
-       (fetch)         (batch)  (store)   (filter)          (enrich)           (score)          (summarize)            (deliver)
+arXiv + Blogs + DBLP → Dedup → SQLite → LLM Filter → PWC → Quality Score → [LLM Summary + Rank] → Markdown / Telegram / Web
+       (fetch)         (batch)  (store)   (filter)   (enrich)   (score)        (summarize)            (deliver)
 ```
 
 ### Package Layout (`src/paperdigest/`)
 
 - **cli.py** — argparse-based CLI with 11 subcommands (`run`, `fetch`, `filter`, `enrich`, `score`, `digest`, `init`, `serve`, `stats`, `setup`, `clean`), global `-v` flag; `run` calls `fetch` then `digest`; `digest` orchestrates filter→enrich→score→summarize→rank
-- **config.py** — YAML loading into validated dataclasses; loads secrets from `.env` file (falls back to env vars: `LLM_API_KEY`, `SEMANTIC_SCHOLAR_API_KEY`, `OPENAI_ADMIN_KEY`, `TELEGRAM_*`); `topic.description` for LLM filter; `LLMConfig` split into `FilterLLMConfig` + `SummarizerLLMConfig`; `EnrichmentConfig` for toggling Semantic Scholar
+- **config.py** — YAML loading into validated dataclasses; loads secrets from `.env` file (falls back to env vars: `LLM_API_KEY`, `OPENAI_ADMIN_KEY`, `TELEGRAM_*`); `topic.description` for LLM filter; `LLMConfig` split into `FilterLLMConfig` + `SummarizerLLMConfig`
 - **models.py** — core data models: `Paper`, `Scores`, `Summary`, `DigestEntry`, `Digest`, `FilterResult`; `Scores` has `quality` + `llm_rank` (no `relevance`/`final`); `Digest` has `number` (auto-increment from DB) and `rejected` field
 - **db.py** — SQLite with WAL mode; context manager (`with Database(...) as db:`); 6 tables (`papers`, `scores`, `digests`, `llm_usage`, `paper_filter_results`, `paper_summaries`); upsert patterns, cost tracking
 - **filter.py** — LLM-based paper relevance filtering using smaller model (gpt-5-nano in shipped config); reads title+abstract against `topic.description`; binary relevant/not with reason; fail-open on errors; cost tracked separately with `filter_` prefix on `run_id`
 - **dedup.py** — 4-stage deduplication: exact arXiv ID → exact DOI → fuzzy title within batch → fuzzy title against DB (SequenceMatcher, 0.85 threshold)
-- **scoring.py** — quality score only (venue tier, h-index, citations, code, freshness); relevance scoring removed (handled by LLM filter)
+- **scoring.py** — quality score only (venue tier, code, freshness); relevance scoring removed (handled by LLM filter)
 - **summarizer.py** — OpenAI-compatible LLM with structured JSON output; always uses full-text PDF (abstract fallback); adds `rank_papers()` method for LLM-based ranking of survivors; uses `config.llm.summarizer`; per-run and monthly cost caps with graceful degradation; caches summaries in `paper_summaries` table to avoid re-summarizing
 - **pdf.py** — PDF download and text extraction via PyMuPDF for full-text summarization
 - **progress.py** — Rich-based terminal progress tracker; `PipelineTracker` renders live stage table with progress bars, ETA, and cost; `NullTracker` for non-interactive environments; `create_tracker()` factory; used by `cli.py` for pipeline stages
@@ -68,9 +68,9 @@ arXiv + Blogs + DBLP → Dedup → SQLite → LLM Filter → Semantic Scholar + 
   - `dblp.py` — DBLP conference proceedings search; covers CVPR, ICRA, IROS, ECCV, IV, ITSC, etc. (NeurIPS excluded — triggers DBLP API 500)
 - **web.py** — FastAPI read-only web dashboard with digest archive and digest viewer; renders markdown digests to HTML (uses `md_in_html` extension for `<details>` blocks); routes use digest number (`/digest/1`); `WebConfig.public_url` used by Telegram for digest links
 - **usage.py** — fetches real OpenAI token usage and USD costs via Admin API (`/v1/organization/usage/completions` + `/v1/organization/costs`); requires `OPENAI_ADMIN_KEY`
-- **enrichment/** — `semantic_scholar.py` (citations, h-index, venue, OA PDF) and `pwc.py` (code links via local JSON dump)
+- **enrichment/** — `pwc.py` (code links via local JSON dump)
 - **delivery/** — `markdown.py` (sandboxed Jinja2 template at `templates/digest.md.j2`, files named `digest_NNN.md`) and `telegram.py` (raw HTTP, MarkdownV2, compact top-5 format with inline keyboard button linking to web digest by number)
-- **setup.py** — interactive setup wizard: offers `config.yaml.example` as default or custom topic; generates config.yaml, .env, Caddyfile, crontab; detects IP vs FQDN for Caddyfile (no TLS for IPs) and `public_url`; tests API connections; initializes DB
+- **setup.py** — interactive setup wizard: offers `config.yaml.example` as default or custom topic; generates config.yaml, .env, Caddyfile, crontab; detects IP vs FQDN for Caddyfile (no TLS for IPs) and `public_url`; tests LLM API connection; initializes DB
 
 ### Key Design Decisions
 
@@ -82,8 +82,8 @@ arXiv + Blogs + DBLP → Dedup → SQLite → LLM Filter → Semantic Scholar + 
 - **Collector extensibility** — `BaseCollector` ABC allows adding new paper sources beyond arXiv
 - **Local PWC lookup** — downloads full JSON dump once (`init`), then does instant local lookups instead of per-paper API calls
 - **Scoring is configurable** — quality weights, venue tiers in `config.yaml`
-- **Individual API failures don't break the pipeline** — enrichment and summarization handle errors per-paper gracefully
-- **Enrichment toggle** — Semantic Scholar can be disabled via config (fresh papers have 0 citations); PWC enrichment is always on (local lookup)
+- **Individual failures don't break the pipeline** — enrichment and summarization handle errors per-paper gracefully
+- **PWC enrichment** — local lookup from JSON dump, always on
 - **Configurable prompt instructions** — extra_instructions field on filter and summarizer configs appended to system prompts; allows steering LLM output without replacing base prompts
 - **Telegram as notification channel** — compact top-5 digest with inline keyboard button linking to full web digest by number; falls back to text link if Telegram rejects the button URL (e.g. non-public URLs); `web.public_url` controls the link target
 - **Once-per-digest papers** — `digested_at` column ensures each paper is processed and included in only one digest; filter results are cached to avoid re-spending LLM on already-judged papers
@@ -147,7 +147,7 @@ Copy `.env.example` to `.env` and fill in values. Copy `config.yaml.example` to 
 ## Code Conventions
 
 - `Database` is a context manager — always use `with Database(...) as db:`
-- Config validation enforces quality weights summing to 1.0 — tests that override partial weights must provide all 5 weights
+- Config validation enforces quality weights summing to 1.0 — tests that override partial weights must provide all 3 weights
 - Telegram uses MarkdownV2 — escape user-controlled strings with `_escape_markdown()`
 - Scoring uses `paper.published.astimezone(timezone.utc)` for timezone-safe freshness
 - Tests use `tmp_path` fixture for temp files/DBs, never `tempfile.mktemp`

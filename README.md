@@ -1,21 +1,21 @@
 # paperdigest
 
-Automated research paper digest system. Fetches papers from arXiv, conference proceedings (DBLP), and lab blogs (NVIDIA, Waymo), filters for relevance using an LLM, enriches with citation and code data, scores by quality, generates full-text LLM summaries with ranking, and delivers digests as Markdown, Telegram messages, or a web dashboard.
+Automated research paper digest system. Fetches papers from arXiv, conference proceedings (DBLP), and lab blogs (NVIDIA, Waymo), filters for relevance using an LLM, enriches with code data, scores by quality, generates full-text LLM summaries with ranking, and delivers digests as Markdown, Telegram messages, or a web dashboard.
 
 Ships configured for **VLM/VLA for Autonomous Driving** but works for any research topic via `config.yaml`.
 
 ## How It Works
 
 ```
-arXiv + Blogs + DBLP → Dedup → SQLite → LLM Filter → Semantic Scholar + PWC → Quality Score → [LLM Summary + Rank] → Markdown / Telegram / Web
-       (fetch)         (batch)  (store)   (filter)          (enrich)           (score)          (summarize)            (deliver)
+arXiv + Blogs + DBLP → Dedup → SQLite → LLM Filter → PWC → Quality Score → [LLM Summary + Rank] → Markdown / Telegram / Web
+       (fetch)         (batch)  (store)   (filter)   (enrich)   (score)        (summarize)            (deliver)
 ```
 
 1. **Collect** — Query arXiv by keywords/categories; optionally scrape NVIDIA/Waymo blogs and DBLP proceedings
 2. **Dedup** — Remove duplicates by arXiv ID, DOI, fuzzy title matching (85% threshold), across batch and DB
 3. **Filter** — LLM reads title + abstract against `topic.description` and decides relevance (fail-open on errors)
-4. **Enrich** — Pull citations, h-indices, venue, OA PDFs from Semantic Scholar; code links from Papers with Code
-5. **Score** — Quality score from venue tier, citations, author reputation, code availability, freshness
+4. **Enrich** — Code links from Papers with Code
+5. **Score** — Quality score from venue tier, code availability, freshness
 6. **Summarize** *(optional)* — Fetch full-text PDF, send to LLM for structured summary; LLM also ranks the top papers
 7. **Deliver** — Write Markdown digest; push compact top-5 notification to Telegram (with link to full web digest); serve via web dashboard
 
@@ -91,7 +91,7 @@ python -m paperdigest [-v] <command> [options]
 | `run` | Full pipeline: fetch → digest | |
 | `fetch` | Collect papers from arXiv (+ blogs/DBLP if enabled) | |
 | `filter` | Run LLM relevance filtering | |
-| `enrich` | Add Semantic Scholar + PWC data | |
+| `enrich` | Add PWC data | |
 | `score` | Compute quality scores | |
 | `digest` | Generate and deliver digest (filter→enrich→score→summarize→rank) | `--dry-run` |
 | `init` | Create database, download PWC links | `--skip-pwc` |
@@ -111,7 +111,6 @@ Key sections: topic description + keywords, collection sources, quality weights 
 | Variable | Required | Purpose |
 |----------|----------|---------|
 | `LLM_API_KEY` | If any LLM enabled | OpenAI or compatible API key |
-| `SEMANTIC_SCHOLAR_API_KEY` | No | Faster Semantic Scholar rate limits |
 | `OPENAI_ADMIN_KEY` | No | Real OpenAI usage/costs on dashboard and `stats` |
 | `TELEGRAM_BOT_TOKEN` | If Telegram enabled | From [@BotFather](https://t.me/BotFather) |
 | `TELEGRAM_CHAT_ID` | If Telegram enabled | Target channel or group ID |
@@ -120,7 +119,7 @@ Copy `.env.example` to `.env` and fill in values.
 
 ## Scoring & LLM
 
-A cheap LLM filters papers for topic relevance. Survivors get a quality score (venue, citations, h-index, code, freshness), then a capable LLM generates full-text summaries and ranks the top papers.
+A cheap LLM filters papers for topic relevance. Survivors get a quality score (venue, code, freshness), then a capable LLM generates full-text summaries and ranks the top papers.
 
 See **[docs/scoring.md](docs/scoring.md)** for formulas, enrichment sources, and cost controls.
 

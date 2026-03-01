@@ -21,7 +21,7 @@ REF_TIME = datetime.now(timezone.utc)
 def _make_config(**overrides):
     scoring_data = {
         "quality": QualityWeights(
-            w_venue=0.25, w_author=0.20, w_cite=0.20, w_code=0.15, w_fresh=0.20
+            w_venue=0.35, w_code=0.30, w_fresh=0.35
         ),
         "venue_tiers": {
             "tier1": ["CVPR", "NeurIPS", "ICML", "ICLR"],
@@ -66,8 +66,6 @@ class TestQualityScoring:
     def test_high_quality_paper(self):
         config = _make_config()
         paper = _make_paper(
-            citations=100,
-            max_hindex=60,
             venue="CVPR 2024",
             code_url="https://github.com/example/repo",
             published=REF_TIME,
@@ -78,8 +76,6 @@ class TestQualityScoring:
     def test_low_quality_paper(self):
         config = _make_config()
         paper = _make_paper(
-            citations=0,
-            max_hindex=2,
             venue=None,
             code_url=None,
             published=REF_TIME - timedelta(days=60),
@@ -107,15 +103,11 @@ class TestScorePapers:
         papers = [
             _make_paper(
                 arxiv_id="2401.00001",
-                citations=50,
-                max_hindex=30,
                 venue="CVPR",
                 code_url="https://github.com/a/b",
             ),
             _make_paper(
                 arxiv_id="2401.00002",
-                citations=0,
-                max_hindex=5,
                 venue=None,
             ),
         ]

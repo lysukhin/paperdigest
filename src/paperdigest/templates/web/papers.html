@@ -1,0 +1,134 @@
+{% extends "base.html" %}
+{% block title %}paperdigest — papers{% endblock %}
+
+{% block extra_css %}
+<style>
+    main.container { max-width: 1200px; }
+
+    .section-title {
+        font-size: 0.875rem;
+        font-weight: 600;
+        color: var(--text-secondary);
+        margin-bottom: 16px;
+    }
+
+    .papers-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.8125rem;
+    }
+
+    .papers-table th {
+        font-family: var(--font-mono);
+        font-size: 0.6875rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: var(--text-muted);
+        text-align: left;
+        padding: 8px 10px;
+        border-bottom: 2px solid var(--border);
+        white-space: nowrap;
+    }
+
+    .papers-table td {
+        padding: 8px 10px;
+        border-bottom: 1px solid var(--border);
+        vertical-align: top;
+        line-height: 1.5;
+    }
+
+    .papers-table tr:hover td { background: #f5f5f5; }
+
+    .col-title { min-width: 220px; }
+    .col-title a { font-weight: 500; }
+
+    .col-authors {
+        color: var(--text-secondary);
+        max-width: 180px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .col-date,
+    .col-digested,
+    .col-score {
+        font-family: var(--font-mono);
+        font-size: 0.75rem;
+        white-space: nowrap;
+        color: var(--text-secondary);
+    }
+
+    .col-summary {
+        color: var(--text-secondary);
+        font-size: 0.75rem;
+        max-width: 300px;
+    }
+
+    .badge-digested {
+        display: inline-block;
+        font-family: var(--font-mono);
+        font-size: 0.625rem;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        padding: 2px 6px;
+        border-radius: 3px;
+        background: #e8f5e9;
+        color: #2e7d32;
+    }
+
+    .empty-state {
+        padding: 64px 0;
+        text-align: center;
+    }
+
+    .empty-state p {
+        color: var(--text-muted);
+        font-size: 0.9375rem;
+    }
+
+    .paper-count {
+        font-family: var(--font-mono);
+        font-size: 0.75rem;
+        color: var(--text-muted);
+        margin-left: 8px;
+        font-weight: 400;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<h2 class="section-title">All papers<span class="paper-count">{{ papers | length }}</span></h2>
+
+{% if papers %}
+<table class="papers-table">
+    <thead>
+        <tr>
+            <th class="col-title">Title</th>
+            <th>Authors</th>
+            <th>Published</th>
+            <th>Digested</th>
+            <th>Score</th>
+            <th>Summary</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for p in papers %}
+        <tr>
+            <td class="col-title"><a href="https://arxiv.org/abs/{{ p.paper.arxiv_id }}">{{ p.paper.title }}</a></td>
+            <td class="col-authors" title="{{ p.paper.authors | join(', ') }}">{{ p.paper.authors[:3] | join(', ') }}{% if p.paper.authors | length > 3 %} et al.{% endif %}</td>
+            <td class="col-date">{{ p.paper.published.strftime('%Y-%m-%d') }}</td>
+            <td class="col-digested">{% if p.digested_at %}<span class="badge-digested">yes</span>{% endif %}</td>
+            <td class="col-score">{% if p.quality is not none %}{{ "%.2f"|format(p.quality) }}{% endif %}</td>
+            <td class="col-summary">{{ p.one_liner }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<div class="empty-state">
+    <p>No papers collected yet. Run <code>paperdigest fetch</code> to collect papers.</p>
+</div>
+{% endif %}
+{% endblock %}
