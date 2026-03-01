@@ -63,16 +63,14 @@ class TestConfigLoading:
             },
             "scoring": {
                 "quality": {
-                    "w_venue": 0.30,
-                    "w_author": 0.20,
-                    "w_cite": 0.20,
-                    "w_code": 0.10,
-                    "w_fresh": 0.20,
+                    "w_venue": 0.40,
+                    "w_code": 0.25,
+                    "w_fresh": 0.35,
                 },
             },
         })
         config = load_config(path)
-        assert config.scoring.quality.w_venue == 0.30
+        assert config.scoring.quality.w_venue == 0.40
         assert not hasattr(config.scoring, "alpha")
         assert not hasattr(config.scoring, "relevance")
 
@@ -342,11 +340,9 @@ class TestScoringWithoutAlpha:
             },
             "scoring": {
                 "quality": {
-                    "w_venue": 0.25,
-                    "w_author": 0.20,
-                    "w_cite": 0.20,
-                    "w_code": 0.15,
-                    "w_fresh": 0.20,
+                    "w_venue": 0.35,
+                    "w_code": 0.30,
+                    "w_fresh": 0.35,
                 },
                 "venue_tiers": {
                     "tier1": ["CVPR", "ICCV"],
@@ -355,7 +351,7 @@ class TestScoringWithoutAlpha:
             },
         })
         config = load_config(path)
-        assert config.scoring.quality.w_venue == 0.25
+        assert config.scoring.quality.w_venue == 0.35
         assert config.scoring.venue_tiers == {
             "tier1": ["CVPR", "ICCV"],
             "tier2": ["ECCV", "ICRA"],
@@ -384,16 +380,9 @@ class TestExtraInstructions:
 
 
 class TestEnrichmentConfig:
-    def test_default_semantic_scholar_enabled(self, tmp_path):
-        """Semantic Scholar enabled by default for backward compat."""
+    def test_enrichment_config_exists(self, tmp_path):
+        """EnrichmentConfig is present on loaded config."""
         cfg_file = tmp_path / "config.yaml"
         cfg_file.write_text(MINIMAL_CONFIG)
         config = load_config(cfg_file)
-        assert config.enrichment.semantic_scholar_enabled is True
-
-    def test_semantic_scholar_disabled(self, tmp_path):
-        """Can disable Semantic Scholar via config."""
-        cfg_file = tmp_path / "config.yaml"
-        cfg_file.write_text(MINIMAL_CONFIG + "\nenrichment:\n  semantic_scholar:\n    enabled: false\n")
-        config = load_config(cfg_file)
-        assert config.enrichment.semantic_scholar_enabled is False
+        assert config.enrichment is not None

@@ -199,6 +199,27 @@ class Database:
         rows = self.conn.execute("SELECT * FROM papers ORDER BY published DESC").fetchall()
         return [self._row_to_paper(r) for r in rows]
 
+    def get_all_papers_with_details(self) -> list[dict]:
+        """Get all papers with scores, one-liner summary, and digest status."""
+        rows = self.conn.execute(
+            """SELECT p.*, s.quality, s.llm_rank, ps.one_liner
+            FROM papers p
+            LEFT JOIN scores s ON p.id = s.paper_id
+            LEFT JOIN paper_summaries ps ON p.id = ps.paper_id
+            ORDER BY p.published DESC"""
+        ).fetchall()
+        results = []
+        for row in rows:
+            paper = self._row_to_paper(row)
+            results.append({
+                "paper": paper,
+                "quality": row["quality"],
+                "llm_rank": row["llm_rank"] or 0,
+                "one_liner": row["one_liner"] or "",
+                "digested_at": row["digested_at"],
+            })
+        return results
+
     def get_undigested_papers(self) -> list[Paper]:
         """Get papers not yet included in any digest."""
         rows = self.conn.execute(

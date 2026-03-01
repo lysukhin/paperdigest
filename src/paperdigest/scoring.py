@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import math
 import re
 from datetime import datetime, timezone
 
@@ -29,8 +28,6 @@ def compute_quality(paper: Paper, config: ScoringConfig) -> float:
     qw: QualityWeights = config.quality
 
     venue_score = _venue_tier_score(paper.venue, config.venue_tiers)
-    author_score = min(1.0, (paper.max_hindex or 0) / 50.0)
-    cite_score = min(1.0, math.log(1 + (paper.citations or 0)) / 5.0)
     code_score = 1.0 if paper.code_url else 0.0
 
     published = (
@@ -43,8 +40,6 @@ def compute_quality(paper: Paper, config: ScoringConfig) -> float:
 
     score = (
         qw.w_venue * venue_score
-        + qw.w_author * author_score
-        + qw.w_cite * cite_score
         + qw.w_code * code_score
         + qw.w_fresh * fresh_score
     )

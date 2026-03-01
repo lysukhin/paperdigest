@@ -45,16 +45,14 @@ class CollectionConfig:
 
 @dataclass
 class EnrichmentConfig:
-    semantic_scholar_enabled: bool = True
+    pass
 
 
 @dataclass
 class QualityWeights:
-    w_venue: float = 0.25
-    w_author: float = 0.20
-    w_cite: float = 0.20
-    w_code: float = 0.15
-    w_fresh: float = 0.20
+    w_venue: float = 0.35
+    w_code: float = 0.30
+    w_fresh: float = 0.35
 
 
 @dataclass
@@ -167,10 +165,6 @@ class Config:
     @property
     def openai_admin_key(self) -> str | None:
         return os.environ.get("OPENAI_ADMIN_KEY")
-
-    @property
-    def semantic_scholar_api_key(self) -> str | None:
-        return os.environ.get("SEMANTIC_SCHOLAR_API_KEY")
 
     @property
     def telegram_bot_token(self) -> str | None:
@@ -308,8 +302,6 @@ def load_config(path: str | Path) -> Config:
     _load_env_file(base_dir / ".env")
 
     coll = raw.get("collection", {})
-    enrich_raw = raw.get("enrichment", {}) or {}
-    ss_raw = enrich_raw.get("semantic_scholar", {}) or {}
     db_raw = raw.get("database", {})
     pwc_raw = raw.get("pwc", {})
 
@@ -317,7 +309,7 @@ def load_config(path: str | Path) -> Config:
 
     # Validate scoring config
     qw = scoring.quality
-    weight_sum = qw.w_venue + qw.w_author + qw.w_cite + qw.w_code + qw.w_fresh
+    weight_sum = qw.w_venue + qw.w_code + qw.w_fresh
     if abs(weight_sum - 1.0) > 0.01:
         raise ValueError(f"Quality weights must sum to 1.0, got {weight_sum:.4f}")
 
@@ -338,9 +330,7 @@ def load_config(path: str | Path) -> Config:
                 years_back=coll.get("conferences", {}).get("years_back", 1),
             ),
         ),
-        enrichment=EnrichmentConfig(
-            semantic_scholar_enabled=ss_raw.get("enabled", True),
-        ),
+        enrichment=EnrichmentConfig(),
         scoring=scoring,
         llm=_build_llm(raw.get("llm", {})),
         digest=DigestConfig(

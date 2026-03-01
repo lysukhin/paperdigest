@@ -56,17 +56,11 @@ collection:
       - ITSC
       # NeurIPS excluded — DBLP API returns 500 for this venue
 
-enrichment:
-  semantic_scholar:
-    enabled: false  # set true to fetch citations/h-index (slow, 0 for fresh papers)
-
 scoring:
   quality:
-    w_venue: 0.25
-    w_author: 0.20
-    w_cite: 0.20
-    w_code: 0.15
-    w_fresh: 0.20
+    w_venue: 0.35
+    w_code: 0.30
+    w_fresh: 0.35
   venue_tiers:
     tier1:
       - "NeurIPS"
