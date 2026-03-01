@@ -16,8 +16,7 @@ Features described in `deep-research-report.md` that are not yet implemented, or
 
 - [ ] **GitHub API enrichment** — Stars, commit frequency, issues, releases for code repos. Adds depth beyond PWC's binary "has code" signal. Requires token; rate limits apply per endpoint.
 - [ ] **Unpaywall enrichment** — Canonical OA status + best OA PDF link. REST API (~100k req/day free). Data Feed (daily changefiles) available by subscription.
-- [ ] **Influential citations** — Semantic Scholar exposes `influentialCitationCount` (ML-classified by citation context). More meaningful than raw citation count for fresh papers.
-- [ ] **OpenAlex citation cross-check** — `cited_by_count` as a second opinion on citation data, especially for DOI-registered works.
+- [ ] **OpenAlex citation enrichment** — `cited_by_count` for citation data, especially for DOI-registered works.
 - [ ] **Author affiliation scoring** — Crossref ROR/affiliations + OpenAlex institutions. Build an `AuthorCredibilityScore` with bonus for top-tier affiliations (configurable list).
 - [ ] **OpenCitations** — Open citation graph as an independent citation data source. Useful for bibliometric analysis layer.
 
@@ -30,7 +29,7 @@ Features described in `deep-research-report.md` that are not yet implemented, or
 
 ## Scoring — Incremental Re-evaluation
 
-- [ ] **Re-enrichment scheduler** — Periodically re-fetch citations/venue/code for existing papers (e.g., weekly for papers < 30 days old, monthly for < 90 days). Requires tracking `last_enriched_at` and a re-enrichment CLI command/cron job.
+- [ ] **Re-enrichment scheduler** — Periodically re-fetch venue/code for existing papers (e.g., weekly for papers < 30 days old, monthly for < 90 days). Requires tracking `last_enriched_at` and a re-enrichment CLI command/cron job.
 - [ ] **Status transition tracking** — Detect and log when a paper moves from preprint → accepted → published. Store events in a `paper_events` table for audit.
 
 ## Summarization — Full-Text & Validation
@@ -38,7 +37,7 @@ Features described in `deep-research-report.md` that are not yet implemented, or
 - [ ] **Summary template versioning** — Store `SummaryTemplate` as a versioned object in the DB. Each generated summary is linked to a template version for auditability. Templates as Jinja2 or YAML, editable without code changes.
 - [ ] **Schema validation on LLM output** — Strict JSON schema check (field types, max lengths, required fields) on every LLM response. Reject and retry on malformed output.
 - [ ] **Anti-hallucination cross-checks** — If LLM claims "accepted at CVPR", verify against CVF/OpenReview/Crossref data. If LLM claims "code available", verify against PWC/GitHub. Flag unverified claims in the digest.
-- [ ] **Provenance tracking** — Record which API source provided each enrichment field (e.g., "citationCount from Semantic Scholar 2026-02-20"). Stored per-field, queryable for debugging and trust assessment.
+- [ ] **Provenance tracking** — Record which API source provided each enrichment field (e.g., "code_url from PWC 2026-02-20"). Stored per-field, queryable for debugging and trust assessment.
 
 ## Delivery — Additional Channels & Formats
 

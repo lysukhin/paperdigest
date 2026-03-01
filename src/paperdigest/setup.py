@@ -85,7 +85,6 @@ def generate_env(
     path: Path,
     *,
     llm_api_key: str,
-    semantic_scholar_key: str,
     openai_admin_key: str,
     telegram_bot_token: str,
     telegram_chat_id: str,
@@ -96,7 +95,6 @@ def generate_env(
     """
     entries = [
         ("LLM_API_KEY", llm_api_key),
-        ("SEMANTIC_SCHOLAR_API_KEY", semantic_scholar_key),
         ("OPENAI_ADMIN_KEY", openai_admin_key),
         ("TELEGRAM_BOT_TOKEN", telegram_bot_token),
         ("TELEGRAM_CHAT_ID", telegram_chat_id),
@@ -248,7 +246,7 @@ def run_setup(base_dir: Path) -> None:
     # --- API keys ---
     print("\n--- API Keys ---")
     llm_api_key = _prompt("OpenAI API key (LLM_API_KEY)")
-    semantic_scholar_key = _prompt("Semantic Scholar API key (optional)")
+
     openai_admin_key = _prompt("OpenAI Admin key (optional, for usage stats)")
 
     # Test LLM connection
@@ -330,7 +328,7 @@ def run_setup(base_dir: Path) -> None:
     generate_env(
         env_path,
         llm_api_key=llm_api_key,
-        semantic_scholar_key=semantic_scholar_key,
+
         openai_admin_key=openai_admin_key,
         telegram_bot_token=telegram_bot_token,
         telegram_chat_id=telegram_chat_id,

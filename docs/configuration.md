@@ -57,11 +57,9 @@ Quality scoring only — relevance is handled by the LLM filter.
 ```yaml
 scoring:
   quality:
-    w_venue: 0.25            # Venue tier weight
-    w_author: 0.20           # Author h-index weight
-    w_cite: 0.20             # Citation count weight
-    w_code: 0.15             # Code availability weight
-    w_fresh: 0.20            # Recency weight
+    w_venue: 0.35            # Venue tier weight
+    w_code: 0.30             # Code availability weight
+    w_fresh: 0.35            # Recency weight
                              # Weights must sum to 1.0
 
   venue_tiers:
@@ -147,7 +145,6 @@ pwc:
 | Variable | Required | Purpose |
 |----------|----------|---------|
 | `LLM_API_KEY` | If any LLM enabled | OpenAI or compatible API key |
-| `SEMANTIC_SCHOLAR_API_KEY` | No | Faster Semantic Scholar rate limits (0.5s vs 3.5s) |
 | `TELEGRAM_BOT_TOKEN` | If Telegram enabled | From [@BotFather](https://t.me/BotFather) |
 | `TELEGRAM_CHAT_ID` | If Telegram enabled | Target channel or group ID |
 

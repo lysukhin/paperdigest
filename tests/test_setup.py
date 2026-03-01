@@ -78,7 +78,6 @@ class TestSetupEnvGeneration:
         generate_env(
             path,
             llm_api_key="sk-test-key",
-            semantic_scholar_key="ss-key",
             openai_admin_key="sk-admin-key",
             telegram_bot_token="123:ABC",
             telegram_chat_id="84555880",
@@ -87,7 +86,6 @@ class TestSetupEnvGeneration:
         assert path.exists()
         content = path.read_text()
         assert "LLM_API_KEY=sk-test-key" in content
-        assert "SEMANTIC_SCHOLAR_API_KEY=ss-key" in content
         assert "OPENAI_ADMIN_KEY=sk-admin-key" in content
         assert "TELEGRAM_BOT_TOKEN=123:ABC" in content
         assert "TELEGRAM_CHAT_ID=84555880" in content
@@ -98,7 +96,6 @@ class TestSetupEnvGeneration:
         generate_env(
             path,
             llm_api_key="sk-test-key",
-            semantic_scholar_key="",
             openai_admin_key="",
             telegram_bot_token="",
             telegram_chat_id="",
@@ -108,7 +105,6 @@ class TestSetupEnvGeneration:
         assert "LLM_API_KEY=sk-test-key" in content
         assert "TELEGRAM_BOT_TOKEN" not in content
         assert "TELEGRAM_CHAT_ID" not in content
-        assert "SEMANTIC_SCHOLAR_API_KEY" not in content
         assert "OPENAI_ADMIN_KEY" not in content
 
     def test_generate_env_empty(self, tmp_path):
@@ -117,7 +113,6 @@ class TestSetupEnvGeneration:
         generate_env(
             path,
             llm_api_key="",
-            semantic_scholar_key="",
             openai_admin_key="",
             telegram_bot_token="",
             telegram_chat_id="",

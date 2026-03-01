@@ -17,13 +17,11 @@ Measures paper quality from external signals, independent of topic.
 
 ```
 quality = w_venue  * venue_tier(venue)              # 1.0 / 0.7 / 0.4 / 0.2
-        + w_author * min(1, max_hindex / 50)        # Author reputation
-        + w_cite   * min(1, log(1 + citations) / 5) # Citation impact
         + w_code   * (1.0 if has_code else 0.0)     # Reproducibility signal
         + w_fresh  * max(0, 1 - age_days / 30)      # Linear decay over 30 days
 ```
 
-Default weights: venue 0.25, author 0.20, citations 0.20, code 0.15, freshness 0.20 (must sum to 1.0).
+Default weights: venue 0.35, code 0.30, freshness 0.35 (must sum to 1.0).
 
 ## LLM Ranking
 
@@ -55,13 +53,6 @@ Multiple safeguards are built in for both filter and summarizer:
 All token usage is tracked in the `llm_usage` SQLite table and visible via `paperdigest stats`.
 
 ## Enrichment Sources
-
-### Semantic Scholar
-
-Queries the [Semantic Scholar Academic Graph API](https://api.semanticscholar.org/) for each paper:
-
-- Citation count, author h-indices, venue, open access PDF URL
-- Rate limits: 0.5s with API key, 3.5s without; 60s backoff on 429
 
 ### Papers with Code
 

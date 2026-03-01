@@ -52,6 +52,18 @@ def create_app(config: Config) -> FastAPI:
             },
         )
 
+    @app.get("/papers", response_class=HTMLResponse)
+    async def list_papers(request: Request):
+        papers = _get_all_papers(config)
+        return templates.TemplateResponse(
+            "papers.html",
+            {
+                "request": request,
+                "papers": papers,
+                "topic": config.topic.name,
+            },
+        )
+
     return app
 
 
@@ -79,6 +91,8 @@ def _parse_digest_meta(path: Path) -> dict | None:
     topic = ""
     papers_count = 0
     first_papers: list[str] = []
+    date_from = ""
+    date_to = ""
 
     for line in content.split("\n"):
         if line.startswith("# Paper Digest:"):
@@ -87,6 +101,11 @@ def _parse_digest_meta(path: Path) -> dict | None:
             m = re.search(r"Ranked:\*\*\s*(\d+)", line)
             if m:
                 papers_count = int(m.group(1))
+        elif "Papers from:" in line:
+            m = re.search(r"Papers from:\*\*\s*(\S+)\s+to\s+(\S+)", line)
+            if m:
+                date_from = m.group(1)
+                date_to = m.group(2)
         elif line.startswith("## ") and len(first_papers) < 3:
             title = re.sub(r"^##\s+\d+\.\s*", "", line).strip()
             if title:
@@ -97,6 +116,8 @@ def _parse_digest_meta(path: Path) -> dict | None:
         "topic": topic,
         "papers_count": papers_count,
         "preview_titles": first_papers,
+        "date_from": date_from,
+        "date_to": date_to,
     }
 
 
@@ -138,6 +159,21 @@ def _get_stats(config: Config) -> dict:
         stats["openai_usage"] = usage
 
     return stats
+
+
+def _get_all_papers(config: Config) -> list[dict]:
+    from .db import Database
+
+    if not config.db_path.exists():
+        return []
+
+    try:
+        with Database(config.db_path) as db:
+            db.init_schema()
+            return db.get_all_papers_with_details()
+    except Exception:
+        logger.debug("Could not read papers", exc_info=True)
+        return []
 
 
 def run_server(config: Config):
