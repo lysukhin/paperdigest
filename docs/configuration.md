@@ -50,28 +50,9 @@ collection:
       # NeurIPS excluded — DBLP API returns 500 for this venue
 ```
 
-## Scoring
-
-Quality scoring only — relevance is handled by the LLM filter.
-
-```yaml
-scoring:
-  quality:
-    w_venue: 0.35            # Venue tier weight
-    w_code: 0.30             # Code availability weight
-    w_fresh: 0.35            # Recency weight
-                             # Weights must sum to 1.0
-
-  venue_tiers:
-    tier1: [NeurIPS, ICML, ICLR, CVPR, ECCV, ICCV, AAAI, IJCAI, RSS, CoRL]    # → 1.0
-    tier2: [IROS, ICRA, WACV, BMVC, ACCV, AISTATS, UAI]                         # → 0.7
-    tier3: [IV, ITSC, T-ITS, RA-L, T-RO]                                        # → 0.4
-    # Everything else → 0.2
-```
-
 ## LLM
 
-Two separate LLM configs — a cheap model for filtering and a capable model for summarization.
+Two separate LLM configs — a cheap model for scoring and a capable model for summarization.
 
 ```yaml
 llm:
@@ -110,6 +91,7 @@ The `base_url` works with any OpenAI-compatible API (OpenAI, Ollama, OpenRouter,
 digest:
   top_n: 20                  # Papers in the digest
   summarize_top_n: 10        # Papers to send to summarizer LLM
+  score_threshold: 0.4       # Min score to qualify for summarization
   output_dir: "data/digests"
 
 delivery:
