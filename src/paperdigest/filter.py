@@ -1,4 +1,4 @@
-"""LLM-based paper relevance filtering with cost controls."""
+"""LLM-based paper scoring with cost controls."""
 
 from __future__ import annotations
 
@@ -10,18 +10,24 @@ from datetime import datetime
 
 from .config import Config
 from .db import Database
-from .models import FilterResult, Paper
+from .models import FilterResult, Paper, Scores
 
 logger = logging.getLogger(__name__)
 
-FILTER_SYSTEM_PROMPT = """You are a research paper relevance filter.
+DEFAULT_FILTER_PROMPT = """You are a research paper relevance and quality evaluator.
 
 The user is interested in:
 {description}
 
-Given a paper's title and abstract, decide if it is relevant to these interests.
-Respond with ONLY valid JSON: {{"relevant": true, "reason": "one sentence explaining why"}}
-or {{"relevant": false, "reason": "one sentence explaining why not"}}"""
+Given a paper's title and abstract, assign a score from 0.0 to 1.0 where:
+- 0.0 = completely irrelevant to the topic
+- 0.3 = tangentially related but not directly useful
+- 0.5 = somewhat relevant, average quality
+- 0.7 = relevant paper with solid methodology
+- 1.0 = highly relevant, outstanding paper from respected authors/institution with strong real-world results
+
+Consider both topical relevance AND paper quality (methodology, authors, results).
+Respond with ONLY valid JSON: {{"score": 0.7, "reason": "one sentence explaining the score"}}"""
 
 FILTER_USER_TEMPLATE = """Paper title: {title}
 
@@ -29,10 +35,10 @@ Abstract: {abstract}"""
 
 
 class PaperFilter:
-    """LLM-based paper filter with cost tracking and budget enforcement.
+    """LLM-based paper scorer with cost tracking and budget enforcement.
 
     Fails open: on any error (JSON parse, API error, budget exhaustion),
-    papers are considered relevant.
+    papers receive a neutral score of 0.5.
     """
 
     def __init__(self, config: Config, db: Database):
@@ -97,10 +103,9 @@ class PaperFilter:
         return True, ""
 
     def _build_messages(self, paper: Paper) -> list[dict]:
-        """Build the LLM messages for filtering."""
-        system = FILTER_SYSTEM_PROMPT.format(
-            description=self.config.topic.description,
-        )
+        """Build the LLM messages for scoring."""
+        prompt_template = self.config.llm.filter.system_prompt or DEFAULT_FILTER_PROMPT
+        system = prompt_template.replace("{description}", self.config.topic.description)
         extra = self.config.llm.filter.extra_instructions
         if extra:
             system += f"\n\nAdditional instructions:\n{extra}"
@@ -114,12 +119,12 @@ class PaperFilter:
         ]
 
     def filter_paper(self, paper: Paper) -> FilterResult:
-        """Filter a single paper. Fails open on any error."""
+        """Score a single paper. Fails open with score=0.5 on any error."""
         # Check budget -- fail open if exhausted
         ok, reason = self._check_budget()
         if not ok:
             logger.warning(f"Filter budget exceeded for {paper.arxiv_id}: {reason}")
-            return FilterResult(paper=paper, relevant=True, reason=f"Filter skipped: {reason}")
+            return FilterResult(paper=paper, relevant=True, score=0.5, reason=f"Filter skipped: {reason}")
 
         messages = self._build_messages(paper)
 
@@ -147,7 +152,7 @@ class PaperFilter:
             # Guard against empty/null response
             if not response.choices or response.choices[0].message.content is None:
                 logger.warning(f"Empty LLM response for filter on {paper.arxiv_id}")
-                return FilterResult(paper=paper, relevant=True, reason="Filter failed: empty LLM response")
+                return FilterResult(paper=paper, relevant=True, score=0.5, reason="Filter failed: empty LLM response")
 
             # Parse response
             content = response.choices[0].message.content.strip()
@@ -159,43 +164,44 @@ class PaperFilter:
             data = json.loads(content)
             self.run_papers += 1
 
+            score = float(data.get("score", 0.5))
+            score = max(0.0, min(1.0, score))  # clamp to [0, 1]
+
             return FilterResult(
                 paper=paper,
-                relevant=bool(data.get("relevant", True)),
+                relevant=True,
+                score=score,
                 reason=data.get("reason", ""),
             )
 
         except json.JSONDecodeError:
             logger.warning(f"Failed to parse filter JSON for {paper.arxiv_id}")
-            return FilterResult(paper=paper, relevant=True, reason="Filter failed: JSON parse error")
+            return FilterResult(paper=paper, relevant=True, score=0.5, reason="Filter failed: JSON parse error")
         except Exception:
             logger.exception(f"Filter LLM call failed for {paper.arxiv_id}")
-            return FilterResult(paper=paper, relevant=True, reason="Filter failed: API error")
+            return FilterResult(paper=paper, relevant=True, score=0.5, reason="Filter failed: API error")
 
     def filter_papers(
         self, papers: list[Paper], progress=None
-    ) -> tuple[list[Paper], list[FilterResult]]:
-        """Filter multiple papers. Returns (relevant_papers, rejected_results)."""
-        relevant_papers: list[Paper] = []
+    ) -> tuple[list[Paper], list[FilterResult], dict[str, float]]:
+        """Score multiple papers. Returns (all_papers, empty_rejected, score_map)."""
+        scored_papers: list[Paper] = []
         rejected_results: list[FilterResult] = []
+        score_map: dict[str, float] = {}
 
         for i, paper in enumerate(papers):
             if progress is not None:
                 progress.advance(1)
                 progress.set_cost(self.run_cost)
             else:
-                logger.info(f"Filtering [{i+1}/{len(papers)}] {paper.arxiv_id}")
+                logger.info(f"Scoring [{i+1}/{len(papers)}] {paper.arxiv_id}")
 
-            # Check for cached filter result
+            # Check for cached filter result (with score)
             if paper.db_id is not None:
                 cached = self.db.get_latest_filter_result(paper.db_id)
-                if cached is not None:
-                    if cached["relevant"]:
-                        relevant_papers.append(paper)
-                    else:
-                        rejected_results.append(
-                            FilterResult(paper=paper, relevant=False, reason=cached["reason"])
-                        )
+                if cached is not None and cached.get("score") is not None:
+                    scored_papers.append(paper)
+                    score_map[paper.arxiv_id] = cached["score"]
                     continue
 
             result = self.filter_paper(paper)
@@ -206,12 +212,13 @@ class PaperFilter:
                     paper_id=paper.db_id,
                     relevant=result.relevant,
                     reason=result.reason,
+                    score=result.score,
                 )
+                # Write score to scores table
+                self.db.upsert_scores(paper.db_id, Scores(quality=result.score, llm_rank=0))
 
-            if result.relevant:
-                relevant_papers.append(paper)
-            else:
-                rejected_results.append(result)
+            scored_papers.append(paper)
+            score_map[paper.arxiv_id] = result.score
 
         # Log LLM usage for this run
         if self.run_papers > 0:
@@ -223,9 +230,8 @@ class PaperFilter:
                 estimated_cost=self.run_cost,
             )
             logger.info(
-                f"Filter run complete: {len(relevant_papers)} relevant, "
-                f"{len(rejected_results)} rejected out of {len(papers)} papers, "
+                f"Scoring run complete: {len(scored_papers)} papers scored, "
                 f"${self.run_cost:.4f} estimated cost"
             )
 
-        return relevant_papers, rejected_results
+        return scored_papers, rejected_results, score_map

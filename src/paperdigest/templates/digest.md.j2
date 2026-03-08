@@ -1,7 +1,8 @@
 # Paper Digest: {{ digest.topic_name }}
 
-**Date:** {{ digest.date.strftime('%Y-%m-%d') }}{% if digest.date_from and digest.date_to %} | **Papers from:** {{ digest.date_from.strftime('%Y-%m-%d') }} to {{ digest.date_to.strftime('%Y-%m-%d') }}{% endif %}
-**Papers collected:** {{ digest.total_collected }} | **New:** {{ digest.total_new }} | **Ranked:** {{ digest.entries | length }}{% if digest.rejected %} | **Filtered out:** {{ digest.rejected | length }}{% endif %}
+**Date:** {{ digest.date.strftime('%Y-%m-%d') }}{{ ' | **Papers from:** %s to %s' % (digest.date_from.strftime('%Y-%m-%d'), digest.date_to.strftime('%Y-%m-%d')) if digest.date_from and digest.date_to else '' }}
+
+**Papers collected:** {{ digest.total_collected }} | **New:** {{ digest.total_new }} | **Summarized:** {{ digest.total_summarized }} | **Ranked:** {{ digest.entries | length }}{% if digest.rejected %} | **Filtered out:** {{ digest.rejected | length }}{% endif %}
 
 ---
 

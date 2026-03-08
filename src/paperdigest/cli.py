@@ -144,23 +144,21 @@ def _cmd_digest_inner(config, db, tracker, dry_run=False):
         logger.info("No papers found. Run 'fetch' first.")
         return
 
-    # LLM filter
-    rejected_results = []
+    # LLM scoring
+    score_map: dict[str, float] = {}
     if config.llm.filter.enabled and not dry_run:
         from .filter import PaperFilter
 
-        with tracker.stage("Filter", total=len(papers)) as stage:
+        with tracker.stage("Score", total=len(papers)) as stage:
             filt = PaperFilter(config, db)
-            papers, rejected_results = filt.filter_papers(papers, progress=stage)
-            stage.set_detail(f"{len(papers)} relevant, {len(rejected_results)} rejected")
+            papers, _, score_map = filt.filter_papers(papers, progress=stage)
+            stage.set_detail(f"{len(papers)} papers scored")
             stage.set_cost(filt.run_cost)
-        if not papers:
-            logger.info("No relevant papers after filtering")
-            return
     else:
-        tracker.skip_stage("Filter")
+        tracker.skip_stage("Score")
+        score_map = {p.arxiv_id: 0.5 for p in papers}
 
-    # Enrich survivors with PWC code links
+    # Enrich with PWC code links
     from .enrichment.pwc import enrich_with_pwc
 
     unenriched = [p for p in papers if p.citations is None]
@@ -176,18 +174,10 @@ def _cmd_digest_inner(config, db, tracker, dry_run=False):
     else:
         tracker.skip_stage("Enrich")
 
-    # Quality scoring
-    from .scoring import score_papers as compute_quality_scores
-
-    with tracker.stage("Score") as stage:
-        scored = compute_quality_scores(papers, config)
-        for paper, scores in scored:
-            db.upsert_scores(paper.db_id, scores)
-        stage.set_detail(f"{len(scored)} papers scored")
-
-    # Limit to top_n for summarization
-    top_papers = [p for p, _ in scored[:config.digest.top_n]]
-    quality_map = {p.arxiv_id: s.quality for p, s in scored}
+    # Sort by LLM score and take top_n
+    papers.sort(key=lambda p: score_map.get(p.arxiv_id, 0.5), reverse=True)
+    top_papers = papers[:config.digest.top_n]
+    quality_map = {p.arxiv_id: score_map.get(p.arxiv_id, 0.5) for p in top_papers}
 
     # LLM summarize + rank
     summaries = {}
@@ -196,7 +186,9 @@ def _cmd_digest_inner(config, db, tracker, dry_run=False):
         from .summarizer import Summarizer
 
         summarizer = Summarizer(config, db)
-        summarize_subset = top_papers[:config.digest.summarize_top_n]
+        threshold = config.digest.score_threshold
+        summarize_subset = [p for p in top_papers[:config.digest.summarize_top_n]
+                            if score_map.get(p.arxiv_id, 0.5) >= threshold]
 
         with tracker.stage("Summarize", total=len(summarize_subset)) as stage:
             summaries = summarizer.summarize_papers(summarize_subset, progress=stage)
@@ -212,24 +204,26 @@ def _cmd_digest_inner(config, db, tracker, dry_run=False):
         tracker.skip_stage("Summarize")
         tracker.skip_stage("Rank")
 
-    # If no LLM ranking, use quality order
+    # If no LLM ranking, use score order
     if not ranking:
         ranking = {p.arxiv_id: rank for rank, p in enumerate(top_papers, 1)}
 
     # Update scores with LLM rank
-    for paper, scores in scored[:config.digest.top_n]:
+    from .models import Scores
+
+    for paper in top_papers:
+        quality = score_map.get(paper.arxiv_id, 0.5)
         llm_rank = ranking.get(paper.arxiv_id, len(top_papers))
-        scores.llm_rank = llm_rank
-        db.upsert_scores(paper.db_id, scores)
+        db.upsert_scores(paper.db_id, Scores(quality=quality, llm_rank=llm_rank))
 
     # Build digest entries sorted by LLM rank
     entries = []
-    scored_map = {p.arxiv_id: (p, s) for p, s in scored}
     for paper in sorted(top_papers, key=lambda p: ranking.get(p.arxiv_id, 999)):
-        p, s = scored_map[paper.arxiv_id]
-        rank = ranking.get(p.arxiv_id, 0)
-        summary = summaries.get(p.arxiv_id)
-        entries.append(DigestEntry(paper=p, scores=s, rank=rank, summary=summary))
+        quality = score_map.get(paper.arxiv_id, 0.5)
+        rank = ranking.get(paper.arxiv_id, 0)
+        summary = summaries.get(paper.arxiv_id)
+        scores = Scores(quality=quality, llm_rank=rank)
+        entries.append(DigestEntry(paper=paper, scores=scores, rank=rank, summary=summary))
 
     total_papers = db.get_paper_count()
     all_papers = [e.paper for e in entries]
@@ -239,9 +233,9 @@ def _cmd_digest_inner(config, db, tracker, dry_run=False):
         date=datetime.now(timezone.utc),
         topic_name=config.topic.name,
         entries=entries,
-        rejected=rejected_results,
         total_collected=total_papers,
         total_new=len(entries),
+        total_summarized=len(summaries),
         date_from=date_from,
         date_to=date_to,
     )
@@ -306,11 +300,11 @@ def cmd_enrich(args):
         logger.info("Enrichment complete")
 
 
-def cmd_filter(args):
-    """Filter papers using LLM relevance check."""
+def cmd_score(args):
+    """Score all papers using LLM."""
     config = get_config(args)
     if not config.llm.filter.enabled:
-        logger.info("LLM filter is disabled in config")
+        logger.info("LLM scoring is disabled in config")
         return
 
     interactive = _is_interactive()
@@ -322,38 +316,16 @@ def cmd_filter(args):
 
         papers = db.get_all_papers()
         if not papers:
-            logger.info("No papers to filter")
-            return
-
-        with tracker.stage("Filter", total=len(papers)) as stage:
-            filt = PaperFilter(config, db)
-            relevant, rejected = filt.filter_papers(papers, progress=stage)
-            stage.set_detail(f"{len(relevant)} relevant, {len(rejected)} rejected")
-            stage.set_cost(filt.run_cost)
-
-        logger.info(f"Filter: {len(relevant)} relevant, {len(rejected)} rejected")
-
-
-def cmd_score(args):
-    """Score all papers (quality signals only)."""
-    config = get_config(args)
-    interactive = _is_interactive()
-    tracker = create_tracker(interactive)
-    with Database(config.db_path) as db, tracker:
-        db.init_schema()
-
-        from .scoring import score_papers
-
-        papers = db.get_all_papers()
-        if not papers:
             logger.info("No papers to score")
             return
 
         with tracker.stage("Score", total=len(papers)) as stage:
-            scored = score_papers(papers, config)
-            for paper, scores in scored:
-                db.upsert_scores(paper.db_id, scores)
+            filt = PaperFilter(config, db)
+            scored, _, score_map = filt.filter_papers(papers, progress=stage)
             stage.set_detail(f"{len(scored)} papers scored")
+            stage.set_cost(filt.run_cost)
+
+        logger.info(f"Scored {len(scored)} papers")
 
 
 def cmd_digest(args):
@@ -370,7 +342,7 @@ def cmd_digest(args):
 
 
 def cmd_run(args):
-    """Full pipeline: fetch -> digest (includes filter, enrich, score, summarize, rank)."""
+    """Full pipeline: fetch -> digest (includes score, enrich, summarize, rank)."""
     config = get_config(args)
     interactive = _is_interactive()
     tracker = create_tracker(interactive)
@@ -572,7 +544,7 @@ def main(argv: list[str] | None = None):
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
     # run
-    subparsers.add_parser("run", parents=[common], help="Full pipeline: fetch -> enrich -> score -> digest")
+    subparsers.add_parser("run", parents=[common], help="Full pipeline: fetch -> score -> enrich -> digest")
 
     # fetch
     subparsers.add_parser("fetch", parents=[common], help="Collect papers from arXiv")
@@ -581,10 +553,7 @@ def main(argv: list[str] | None = None):
     subparsers.add_parser("enrich", parents=[common], help="Enrich stored papers")
 
     # score
-    subparsers.add_parser("score", parents=[common], help="Score all papers")
-
-    # filter
-    subparsers.add_parser("filter", parents=[common], help="Filter papers by LLM relevance")
+    subparsers.add_parser("score", parents=[common], help="Score all papers using LLM")
 
     # digest
     digest_parser = subparsers.add_parser("digest", parents=[common], help="Generate and deliver digest")
@@ -631,7 +600,6 @@ def main(argv: list[str] | None = None):
         "fetch": cmd_fetch,
         "enrich": cmd_enrich,
         "score": cmd_score,
-        "filter": cmd_filter,
         "digest": cmd_digest,
         "init": cmd_init,
         "clean": cmd_clean,

@@ -65,6 +65,7 @@ CREATE TABLE IF NOT EXISTS paper_filter_results (
     run_date TEXT NOT NULL,
     relevant INTEGER NOT NULL,
     reason TEXT NOT NULL DEFAULT '',
+    score REAL,
     created_at TEXT DEFAULT (datetime('now'))
 );
 
@@ -107,10 +108,11 @@ class Database:
     def init_schema(self):
         # Run migrations for existing databases before applying schema
         # (old scores table would cause index creation to fail on new columns)
-        from .migrate import migrate_add_digest_number, migrate_add_digested_at, migrate_scores_table
+        from .migrate import migrate_add_digest_number, migrate_add_digested_at, migrate_add_filter_score, migrate_scores_table
         migrate_scores_table(self.conn)
         migrate_add_digested_at(self.conn)
         migrate_add_digest_number(self.conn)
+        migrate_add_filter_score(self.conn)
 
         self.conn.executescript(SCHEMA)
         self.conn.execute("PRAGMA foreign_keys=ON")
@@ -316,12 +318,12 @@ class Database:
 
     # --- Filter Results ---
 
-    def upsert_filter_result(self, paper_id: int, relevant: bool, reason: str):
+    def upsert_filter_result(self, paper_id: int, relevant: bool, reason: str, score: float | None = None):
         """Store a filter result for a paper."""
         self.conn.execute(
-            """INSERT INTO paper_filter_results (paper_id, run_date, relevant, reason)
-            VALUES (?, date('now'), ?, ?)""",
-            (paper_id, int(relevant), reason),
+            """INSERT INTO paper_filter_results (paper_id, run_date, relevant, reason, score)
+            VALUES (?, date('now'), ?, ?, ?)""",
+            (paper_id, int(relevant), reason, score),
         )
         self.conn.commit()
 

@@ -35,7 +35,7 @@ class TestConfigLoading:
         assert config.topic.description == ""  # default
 
     def test_missing_topic_raises(self, tmp_path):
-        path = _write_config(tmp_path, {"scoring": {}})
+        path = _write_config(tmp_path, {"llm": {}})
         with pytest.raises(ValueError, match="topic"):
             load_config(path)
 
@@ -55,24 +55,16 @@ class TestConfigLoading:
         with pytest.raises(FileNotFoundError):
             load_config("/nonexistent/config.yaml")
 
-    def test_custom_scoring(self, tmp_path):
+    def test_no_scoring_attribute(self, tmp_path):
+        """Config no longer has a scoring attribute."""
         path = _write_config(tmp_path, {
             "topic": {
                 "name": "Test",
                 "primary_keywords": ["test"],
-            },
-            "scoring": {
-                "quality": {
-                    "w_venue": 0.40,
-                    "w_code": 0.25,
-                    "w_fresh": 0.35,
-                },
-            },
+            }
         })
         config = load_config(path)
-        assert config.scoring.quality.w_venue == 0.40
-        assert not hasattr(config.scoring, "alpha")
-        assert not hasattr(config.scoring, "relevance")
+        assert not hasattr(config, "scoring")
 
     def test_llm_defaults_disabled(self, tmp_path):
         path = _write_config(tmp_path, {
@@ -107,18 +99,19 @@ class TestConfigLoading:
         assert config.llm.summarizer.cost_control.max_cost_per_run == 1.0
         assert config.llm.summarizer.cost_control.max_cost_per_month == 20.0
 
-    def test_invalid_quality_weights_raises(self, tmp_path):
+    def test_scoring_section_ignored(self, tmp_path):
+        """Old scoring section in YAML is silently ignored."""
         path = _write_config(tmp_path, {
             "topic": {
                 "name": "Test",
                 "primary_keywords": ["test"],
             },
             "scoring": {
-                "quality": {"w_venue": 0.9},
+                "quality": {"w_venue": 0.5, "w_code": 0.3, "w_fresh": 0.2},
             },
         })
-        with pytest.raises(ValueError, match="Quality weights"):
-            load_config(path)
+        config = load_config(path)
+        assert not hasattr(config, "scoring")
 
 
 class TestTopicDescription:
@@ -318,46 +311,6 @@ class TestWebConfig:
         assert config.web.public_url == "http://127.0.0.1:8000"
 
 
-class TestScoringWithoutAlpha:
-    def test_scoring_has_no_alpha(self, tmp_path):
-        """ScoringConfig no longer has alpha field."""
-        path = _write_config(tmp_path, {
-            "topic": {
-                "name": "Test",
-                "primary_keywords": ["test"],
-            }
-        })
-        config = load_config(path)
-        assert not hasattr(config.scoring, "alpha")
-        assert not hasattr(config.scoring, "relevance")
-
-    def test_scoring_has_quality_and_venue_tiers(self, tmp_path):
-        """ScoringConfig still has quality weights and venue_tiers."""
-        path = _write_config(tmp_path, {
-            "topic": {
-                "name": "Test",
-                "primary_keywords": ["test"],
-            },
-            "scoring": {
-                "quality": {
-                    "w_venue": 0.35,
-                    "w_code": 0.30,
-                    "w_fresh": 0.35,
-                },
-                "venue_tiers": {
-                    "tier1": ["CVPR", "ICCV"],
-                    "tier2": ["ECCV", "ICRA"],
-                },
-            },
-        })
-        config = load_config(path)
-        assert config.scoring.quality.w_venue == 0.35
-        assert config.scoring.venue_tiers == {
-            "tier1": ["CVPR", "ICCV"],
-            "tier2": ["ECCV", "ICRA"],
-        }
-
-
 class TestExtraInstructions:
     def test_default_extra_instructions_none(self, tmp_path):
         cfg_file = tmp_path / "config.yaml"
@@ -377,6 +330,20 @@ class TestExtraInstructions:
         cfg_file.write_text(MINIMAL_CONFIG + '\nllm:\n  summarizer:\n    extra_instructions: "Include benchmark results in one_liner"\n')
         config = load_config(cfg_file)
         assert config.llm.summarizer.extra_instructions == "Include benchmark results in one_liner"
+
+
+class TestScoreThreshold:
+    def test_default_score_threshold(self, tmp_path):
+        cfg_file = tmp_path / "config.yaml"
+        cfg_file.write_text(MINIMAL_CONFIG)
+        config = load_config(cfg_file)
+        assert config.digest.score_threshold == 0.4
+
+    def test_custom_score_threshold(self, tmp_path):
+        cfg_file = tmp_path / "config.yaml"
+        cfg_file.write_text(MINIMAL_CONFIG + "\ndigest:\n  score_threshold: 0.6\n")
+        config = load_config(cfg_file)
+        assert config.digest.score_threshold == 0.6
 
 
 class TestEnrichmentConfig:
