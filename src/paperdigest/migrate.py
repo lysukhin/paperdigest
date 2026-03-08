@@ -98,3 +98,19 @@ def migrate_add_digest_number(conn: sqlite3.Connection):
         logger.info(f"Backfilled digest_number for {len(rows)} existing digests")
     conn.commit()
     logger.info("digest_number migration complete")
+
+
+def migrate_add_filter_score(conn: sqlite3.Connection):
+    """Add score column to paper_filter_results table."""
+    cursor = conn.execute("PRAGMA table_info(paper_filter_results)")
+    columns = {row[1] for row in cursor.fetchall()}
+    if "score" in columns:
+        logger.debug("paper_filter_results already has score column")
+        return
+    if "paper_id" not in columns:
+        # Table doesn't exist yet — schema creation will handle it
+        return
+    logger.info("Adding score column to paper_filter_results table...")
+    conn.execute("ALTER TABLE paper_filter_results ADD COLUMN score REAL")
+    conn.commit()
+    logger.info("filter score migration complete")

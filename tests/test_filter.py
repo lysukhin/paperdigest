@@ -1,4 +1,4 @@
-"""Tests for the LLM paper filter module."""
+"""Tests for the LLM paper scoring module."""
 
 import json
 from datetime import datetime, timezone
@@ -86,28 +86,29 @@ def db(tmp_path):
 
 
 class TestFilterPaper:
-    """Tests for filter_paper() method."""
+    """Tests for filter_paper() method (now scores instead of binary filter)."""
 
-    def test_relevant_paper(self, db):
+    def test_high_score_paper(self, db):
         config = _make_config()
         f = PaperFilter(config, db)
         f._client = MagicMock()
 
-        resp_json = json.dumps({"relevant": True, "reason": "Directly about VLMs for driving."})
+        resp_json = json.dumps({"score": 0.85, "reason": "Directly about VLMs for driving."})
         f._client.chat.completions.create.return_value = _make_llm_response(resp_json)
 
         result = f.filter_paper(_make_paper())
 
         assert isinstance(result, FilterResult)
         assert result.relevant is True
+        assert result.score == 0.85
         assert result.reason == "Directly about VLMs for driving."
 
-    def test_irrelevant_paper(self, db):
+    def test_low_score_paper(self, db):
         config = _make_config()
         f = PaperFilter(config, db)
         f._client = MagicMock()
 
-        resp_json = json.dumps({"relevant": False, "reason": "About protein folding, not driving."})
+        resp_json = json.dumps({"score": 0.1, "reason": "About protein folding, not driving."})
         f._client.chat.completions.create.return_value = _make_llm_response(resp_json)
 
         paper = _make_paper(
@@ -117,7 +118,8 @@ class TestFilterPaper:
         result = f.filter_paper(paper)
 
         assert isinstance(result, FilterResult)
-        assert result.relevant is False
+        assert result.relevant is True  # no rejection, just low score
+        assert result.score == 0.1
         assert result.reason == "About protein folding, not driving."
 
     def test_invalid_json_fails_open(self, db):
@@ -130,6 +132,7 @@ class TestFilterPaper:
 
         assert isinstance(result, FilterResult)
         assert result.relevant is True
+        assert result.score == 0.5
         assert "JSON" in result.reason or "parse" in result.reason.lower() or "fail" in result.reason.lower()
 
     def test_api_error_fails_open(self, db):
@@ -142,6 +145,7 @@ class TestFilterPaper:
 
         assert isinstance(result, FilterResult)
         assert result.relevant is True
+        assert result.score == 0.5
         assert "error" in result.reason.lower() or "fail" in result.reason.lower()
 
     def test_tracks_token_usage(self, db):
@@ -149,7 +153,7 @@ class TestFilterPaper:
         f = PaperFilter(config, db)
         f._client = MagicMock()
 
-        resp_json = json.dumps({"relevant": True, "reason": "Relevant paper."})
+        resp_json = json.dumps({"score": 0.7, "reason": "Relevant paper."})
         f._client.chat.completions.create.return_value = _make_llm_response(
             resp_json, input_tokens=100, output_tokens=50
         )
@@ -174,6 +178,7 @@ class TestFilterPaper:
         result = f.filter_paper(_make_paper())
 
         assert result.relevant is True
+        assert result.score == 0.5
 
     def test_null_content_fails_open(self, db):
         config = _make_config()
@@ -192,13 +197,14 @@ class TestFilterPaper:
         result = f.filter_paper(_make_paper())
 
         assert result.relevant is True
+        assert result.score == 0.5
 
     def test_uses_topic_description_in_system_prompt(self, db):
         config = _make_config(description="Papers about underwater robotics.")
         f = PaperFilter(config, db)
         f._client = MagicMock()
 
-        resp_json = json.dumps({"relevant": True, "reason": "Relevant."})
+        resp_json = json.dumps({"score": 0.7, "reason": "Relevant."})
         f._client.chat.completions.create.return_value = _make_llm_response(resp_json)
 
         f.filter_paper(_make_paper())
@@ -213,7 +219,7 @@ class TestFilterPaper:
         f = PaperFilter(config, db)
         f._client = MagicMock()
 
-        resp_json = json.dumps({"relevant": True, "reason": "Relevant."})
+        resp_json = json.dumps({"score": 0.7, "reason": "Relevant."})
         f._client.chat.completions.create.return_value = _make_llm_response(resp_json)
 
         paper = _make_paper(title="My Special Title", abstract="My special abstract content.")
@@ -225,22 +231,39 @@ class TestFilterPaper:
         assert "My Special Title" in user_msg
         assert "My special abstract content." in user_msg
 
-
-class TestFilterPapers:
-    """Tests for filter_papers() batch method."""
-
-    def test_splits_relevant_and_rejected(self, db):
+    def test_score_clamped_to_valid_range(self, db):
         config = _make_config()
         f = PaperFilter(config, db)
         f._client = MagicMock()
 
-        relevant_json = json.dumps({"relevant": True, "reason": "Relevant to driving."})
-        rejected_json = json.dumps({"relevant": False, "reason": "Not about driving."})
+        resp_json = json.dumps({"score": 1.5, "reason": "Over max."})
+        f._client.chat.completions.create.return_value = _make_llm_response(resp_json)
+        result = f.filter_paper(_make_paper())
+        assert result.score == 1.0
+
+    def test_negative_score_clamped(self, db):
+        config = _make_config()
+        f = PaperFilter(config, db)
+        f._client = MagicMock()
+
+        resp_json = json.dumps({"score": -0.2, "reason": "Under min."})
+        f._client.chat.completions.create.return_value = _make_llm_response(resp_json)
+        result = f.filter_paper(_make_paper())
+        assert result.score == 0.0
+
+
+class TestFilterPapers:
+    """Tests for filter_papers() batch method."""
+
+    def test_returns_all_papers_with_scores(self, db):
+        config = _make_config()
+        f = PaperFilter(config, db)
+        f._client = MagicMock()
 
         f._client.chat.completions.create.side_effect = [
-            _make_llm_response(relevant_json),
-            _make_llm_response(rejected_json),
-            _make_llm_response(relevant_json),
+            _make_llm_response(json.dumps({"score": 0.9, "reason": "Great paper."})),
+            _make_llm_response(json.dumps({"score": 0.1, "reason": "Off topic."})),
+            _make_llm_response(json.dumps({"score": 0.7, "reason": "Good paper."})),
         ]
 
         papers = [
@@ -248,25 +271,25 @@ class TestFilterPapers:
             _make_paper("2401.00002", "Protein Folding"),
             _make_paper("2401.00003", "Camera Calibration for AD"),
         ]
-        # Papers need db_ids for upsert_filter_result
         for p in papers:
             p.db_id = db.upsert_paper(p)
 
-        relevant, rejected = f.filter_papers(papers)
+        scored, rejected, score_map = f.filter_papers(papers)
 
-        assert len(relevant) == 2
-        assert len(rejected) == 1
-        assert relevant[0].arxiv_id == "2401.00001"
-        assert relevant[1].arxiv_id == "2401.00003"
-        assert rejected[0].paper.arxiv_id == "2401.00002"
-        assert rejected[0].relevant is False
+        # All papers returned (no rejection)
+        assert len(scored) == 3
+        assert len(rejected) == 0
+        # Score map populated
+        assert score_map["2401.00001"] == pytest.approx(0.9)
+        assert score_map["2401.00002"] == pytest.approx(0.1)
+        assert score_map["2401.00003"] == pytest.approx(0.7)
 
     def test_stores_results_in_db(self, db):
         config = _make_config()
         f = PaperFilter(config, db)
         f._client = MagicMock()
 
-        resp_json = json.dumps({"relevant": True, "reason": "Relevant."})
+        resp_json = json.dumps({"score": 0.8, "reason": "Relevant."})
         f._client.chat.completions.create.return_value = _make_llm_response(resp_json)
 
         paper = _make_paper()
@@ -278,13 +301,31 @@ class TestFilterPapers:
         assert len(results) == 1
         assert results[0]["relevant"] == 1
         assert results[0]["reason"] == "Relevant."
+        assert results[0]["score"] == pytest.approx(0.8)
+
+    def test_writes_scores_to_scores_table(self, db):
+        config = _make_config()
+        f = PaperFilter(config, db)
+        f._client = MagicMock()
+
+        resp_json = json.dumps({"score": 0.75, "reason": "Good paper."})
+        f._client.chat.completions.create.return_value = _make_llm_response(resp_json)
+
+        paper = _make_paper()
+        paper.db_id = db.upsert_paper(paper)
+
+        f.filter_papers([paper])
+
+        top = db.get_top_scored_papers(limit=1)
+        assert len(top) == 1
+        assert top[0][1].quality == pytest.approx(0.75)
 
     def test_logs_llm_usage_to_db(self, db):
         config = _make_config()
         f = PaperFilter(config, db)
         f._client = MagicMock()
 
-        resp_json = json.dumps({"relevant": True, "reason": "Relevant."})
+        resp_json = json.dumps({"score": 0.7, "reason": "Relevant."})
         f._client.chat.completions.create.return_value = _make_llm_response(
             resp_json, input_tokens=100, output_tokens=50
         )
@@ -305,7 +346,7 @@ class TestFilterPapers:
         f = PaperFilter(config, db)
         f._client = MagicMock()
 
-        resp_json = json.dumps({"relevant": True, "reason": "Relevant."})
+        resp_json = json.dumps({"score": 0.7, "reason": "Relevant."})
         f._client.chat.completions.create.return_value = _make_llm_response(resp_json)
 
         paper = _make_paper()
@@ -315,15 +356,16 @@ class TestFilterPapers:
 
         assert f.run_id.startswith("filter_")
 
-    def test_no_logging_when_zero_papers_filtered(self, db):
+    def test_no_logging_when_zero_papers_scored(self, db):
         config = _make_config()
         f = PaperFilter(config, db)
         f._client = MagicMock()
 
-        f.filter_papers([])
+        _, _, score_map = f.filter_papers([])
 
         stats = db.get_llm_stats()
         assert stats["runs"] == 0
+        assert score_map == {}
 
 
 class TestFilterProgress:
@@ -334,7 +376,7 @@ class TestFilterProgress:
         f = PaperFilter(config, db)
         f._client = MagicMock()
 
-        resp_json = json.dumps({"relevant": True, "reason": "Relevant."})
+        resp_json = json.dumps({"score": 0.7, "reason": "Relevant."})
         f._client.chat.completions.create.return_value = _make_llm_response(resp_json)
 
         papers = [
@@ -356,7 +398,7 @@ class TestFilterProgress:
         f = PaperFilter(config, db)
         f._client = MagicMock()
 
-        resp_json = json.dumps({"relevant": True, "reason": "Relevant."})
+        resp_json = json.dumps({"score": 0.7, "reason": "Relevant."})
         f._client.chat.completions.create.return_value = _make_llm_response(resp_json)
 
         paper = _make_paper()
@@ -418,8 +460,9 @@ class TestFilterBudget:
 
         result = f.filter_paper(_make_paper())
 
-        # Fails open: paper is considered relevant
+        # Fails open: paper gets neutral score
         assert result.relevant is True
+        assert result.score == 0.5
         assert "budget" in result.reason.lower()
 
     def test_budget_exhaustion_api_not_called(self, db):
@@ -446,26 +489,26 @@ class TestFilterBudget:
         f = PaperFilter(config, db)
         f._client = MagicMock()
 
-        resp_json = json.dumps({"relevant": False, "reason": "Not relevant."})
+        resp_json = json.dumps({"score": 0.3, "reason": "Low relevance."})
         f._client.chat.completions.create.return_value = _make_llm_response(
             resp_json, input_tokens=5000, output_tokens=3000
         )
 
         # First call succeeds (budget not yet consumed)
         r1 = f.filter_paper(_make_paper("2401.00001"))
-        # May be relevant=False from the LLM response
 
         # Second call should fail open due to per-run budget
         r2 = f.filter_paper(_make_paper("2401.00002"))
         assert r2.relevant is True
+        assert r2.score == 0.5
         assert "budget" in r2.reason.lower()
 
 
 class TestFilterCaching:
-    """Tests for filter result caching — skip papers already judged."""
+    """Tests for filter result caching — skip papers already scored."""
 
-    def test_skips_already_rejected_paper(self, tmp_path):
-        """Papers with a cached rejection are skipped without LLM call."""
+    def test_skips_already_scored_paper(self, tmp_path):
+        """Papers with a cached score are skipped without LLM call."""
         config = _make_config()
         db = Database(tmp_path / "test.db")
         db.init_schema()
@@ -473,21 +516,21 @@ class TestFilterCaching:
         paper_id = db.upsert_paper(paper)
         paper.db_id = paper_id
 
-        # Pre-populate filter result as rejected
-        db.upsert_filter_result(paper_id, relevant=False, reason="Off topic")
+        # Pre-populate filter result with score
+        db.upsert_filter_result(paper_id, relevant=True, reason="Good match", score=0.8)
 
         filt = PaperFilter(config, db)
-        relevant, rejected = filt.filter_papers([paper])
+        scored, rejected, score_map = filt.filter_papers([paper])
 
-        assert len(relevant) == 0
-        assert len(rejected) == 1
-        assert rejected[0].reason == "Off topic"
+        assert len(scored) == 1
+        assert len(rejected) == 0
+        assert score_map[paper.arxiv_id] == pytest.approx(0.8)
         # No LLM call was made
         assert filt.run_papers == 0
         db.close()
 
-    def test_skips_already_relevant_paper(self, tmp_path):
-        """Papers with a cached relevant result are included without LLM call."""
+    def test_old_cache_without_score_is_refetched(self, tmp_path):
+        """Old cache entries without a score trigger a new LLM call."""
         config = _make_config()
         db = Database(tmp_path / "test.db")
         db.init_schema()
@@ -495,13 +538,18 @@ class TestFilterCaching:
         paper_id = db.upsert_paper(paper)
         paper.db_id = paper_id
 
-        # Pre-populate filter result as relevant
-        db.upsert_filter_result(paper_id, relevant=True, reason="Good match")
+        # Pre-populate old-style filter result (no score)
+        db.upsert_filter_result(paper_id, relevant=True, reason="Good match", score=None)
 
         filt = PaperFilter(config, db)
-        relevant, rejected = filt.filter_papers([paper])
+        filt._client = MagicMock()
+        resp_json = json.dumps({"score": 0.7, "reason": "Re-scored."})
+        filt._client.chat.completions.create.return_value = _make_llm_response(resp_json)
 
-        assert len(relevant) == 1
-        assert len(rejected) == 0
-        assert filt.run_papers == 0
+        scored, rejected, score_map = filt.filter_papers([paper])
+
+        assert len(scored) == 1
+        assert score_map[paper.arxiv_id] == pytest.approx(0.7)
+        # LLM was called because old cache had no score
+        assert filt.run_papers == 1
         db.close()

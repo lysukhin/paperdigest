@@ -44,12 +44,14 @@ class TestFilterResult:
         assert fr.paper is paper
         assert fr.relevant is True
         assert fr.reason == ""
+        assert fr.score == 0.0
 
-    def test_with_reason(self):
+    def test_with_score(self):
         paper = _make_paper()
-        fr = FilterResult(paper=paper, relevant=False, reason="Not about driving")
-        assert fr.relevant is False
-        assert fr.reason == "Not about driving"
+        fr = FilterResult(paper=paper, relevant=True, reason="Good paper", score=0.8)
+        assert fr.relevant is True
+        assert fr.reason == "Good paper"
+        assert fr.score == 0.8
 
     def test_stores_paper_reference(self):
         paper = _make_paper(title="Specific Title")

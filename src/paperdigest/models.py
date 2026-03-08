@@ -54,11 +54,12 @@ class Summary:
 
 @dataclass
 class FilterResult:
-    """Result of LLM relevance filtering for a paper."""
+    """Result of LLM scoring for a paper."""
 
     paper: Paper
     relevant: bool
     reason: str = ""
+    score: float = 0.0
 
 
 @dataclass
@@ -82,5 +83,6 @@ class Digest:
     rejected: list[FilterResult] = field(default_factory=list)
     total_collected: int = 0
     total_new: int = 0
+    total_summarized: int = 0
     date_from: datetime | None = None
     date_to: datetime | None = None

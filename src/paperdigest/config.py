@@ -49,19 +49,6 @@ class EnrichmentConfig:
 
 
 @dataclass
-class QualityWeights:
-    w_venue: float = 0.35
-    w_code: float = 0.30
-    w_fresh: float = 0.35
-
-
-@dataclass
-class ScoringConfig:
-    quality: QualityWeights = field(default_factory=QualityWeights)
-    venue_tiers: dict[str, list[str]] = field(default_factory=dict)
-
-
-@dataclass
 class CostControl:
     max_cost_per_run: float = 0.50
     max_cost_per_month: float = 10.00
@@ -77,6 +64,7 @@ class FilterLLMConfig:
     base_url: str = "https://api.openai.com/v1"
     temperature: float | None = None
     max_completion_tokens: int | None = 256
+    system_prompt: str | None = None
     extra_instructions: str | None = None
     cost_control: CostControl = field(default_factory=CostControl)
 
@@ -90,6 +78,7 @@ class SummarizerLLMConfig:
     max_completion_tokens: int | None = 16384
     max_text_chars: int = 50000
     language: str = "Russian"
+    system_prompt: str | None = None
     extra_instructions: str | None = None
     cost_control: CostControl = field(default_factory=CostControl)
 
@@ -104,6 +93,7 @@ class LLMConfig:
 class DigestConfig:
     top_n: int = 20
     summarize_top_n: int = 15
+    score_threshold: float = 0.4
     output_dir: str = "data/digests"
 
 
@@ -135,7 +125,6 @@ class Config:
     topic: TopicConfig
     collection: CollectionConfig = field(default_factory=CollectionConfig)
     enrichment: EnrichmentConfig = field(default_factory=EnrichmentConfig)
-    scoring: ScoringConfig = field(default_factory=ScoringConfig)
     llm: LLMConfig = field(default_factory=LLMConfig)
     digest: DigestConfig = field(default_factory=DigestConfig)
     delivery: DeliveryConfig = field(default_factory=DeliveryConfig)
@@ -186,14 +175,6 @@ def _build_topic(d: dict) -> TopicConfig:
     )
 
 
-def _build_scoring(d: dict) -> ScoringConfig:
-    qual = d.get("quality", {})
-    return ScoringConfig(
-        quality=QualityWeights(**qual),
-        venue_tiers=d.get("venue_tiers", {}),
-    )
-
-
 def _build_llm(d: dict) -> LLMConfig:
     filter_raw = d.get("filter", {})
     summ_raw = d.get("summarizer", {})
@@ -206,6 +187,7 @@ def _build_llm(d: dict) -> LLMConfig:
             base_url=filter_raw.get("base_url", "https://api.openai.com/v1"),
             temperature=filter_raw.get("temperature"),
             max_completion_tokens=filter_raw.get("max_completion_tokens", 256),
+            system_prompt=filter_raw.get("system_prompt"),
             extra_instructions=filter_raw.get("extra_instructions"),
             cost_control=CostControl(**filter_cc),
         ),
@@ -217,6 +199,7 @@ def _build_llm(d: dict) -> LLMConfig:
             max_completion_tokens=summ_raw.get("max_completion_tokens", 16384),
             max_text_chars=summ_raw.get("max_text_chars", 50000),
             language=summ_raw.get("language", "Russian"),
+            system_prompt=summ_raw.get("system_prompt"),
             extra_instructions=summ_raw.get("extra_instructions"),
             cost_control=CostControl(**summ_cc),
         ),
@@ -305,14 +288,6 @@ def load_config(path: str | Path) -> Config:
     db_raw = raw.get("database", {})
     pwc_raw = raw.get("pwc", {})
 
-    scoring = _build_scoring(raw.get("scoring", {}))
-
-    # Validate scoring config
-    qw = scoring.quality
-    weight_sum = qw.w_venue + qw.w_code + qw.w_fresh
-    if abs(weight_sum - 1.0) > 0.01:
-        raise ValueError(f"Quality weights must sum to 1.0, got {weight_sum:.4f}")
-
     web_raw = raw.get("web") or {}
 
     return Config(
@@ -331,11 +306,11 @@ def load_config(path: str | Path) -> Config:
             ),
         ),
         enrichment=EnrichmentConfig(),
-        scoring=scoring,
         llm=_build_llm(raw.get("llm", {})),
         digest=DigestConfig(
             top_n=raw.get("digest", {}).get("top_n", 20),
             summarize_top_n=raw.get("digest", {}).get("summarize_top_n", 15),
+            score_threshold=raw.get("digest", {}).get("score_threshold", 0.4),
             output_dir=raw.get("digest", {}).get("output_dir", "data/digests"),
         ),
         delivery=_build_delivery(raw.get("delivery", {})),

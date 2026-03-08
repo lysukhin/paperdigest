@@ -14,7 +14,7 @@ from .models import Paper, Summary
 
 logger = logging.getLogger(__name__)
 
-SYSTEM_PROMPT_ABSTRACT = """You are a research paper analyst specializing in autonomous driving and computer vision.
+DEFAULT_SUMMARIZER_PROMPT_ABSTRACT = """You are a research paper analyst specializing in {topic_name}.
 Given a paper's title and abstract, produce a structured JSON summary with these fields:
 - one_liner: A single sentence capturing the core contribution (max 150 chars)
 - affiliations: Comma-separated list of author affiliations/institutions (e.g. "MIT, Google Research, Tsinghua University")
@@ -22,13 +22,13 @@ Given a paper's title and abstract, produce a structured JSON summary with these
 - data_benchmarks: Datasets and benchmarks used for evaluation
 - key_results: Most important quantitative or qualitative results
 - novelty: What makes this work novel compared to prior work
-- ad_relevance: How this work relates to autonomous driving applications
+- ad_relevance: How this work relates to {topic_name} applications
 - limitations: Key limitations or open questions (be honest but brief)
 
 Write all summary field values in {language}. Keep technical terms, model names, dataset names, and metric names in their original English form.
 Respond with ONLY valid JSON, no markdown fences."""
 
-SYSTEM_PROMPT_FULL_TEXT = """You are a research paper analyst specializing in autonomous driving and computer vision.
+DEFAULT_SUMMARIZER_PROMPT_FULL_TEXT = """You are a research paper analyst specializing in {topic_name}.
 Given a paper's title and full text, produce a structured JSON summary with these fields:
 - one_liner: A single sentence capturing the core contribution (max 150 chars)
 - affiliations: Comma-separated list of author affiliations/institutions (e.g. "MIT, Google Research, Tsinghua University")
@@ -36,7 +36,7 @@ Given a paper's title and full text, produce a structured JSON summary with thes
 - data_benchmarks: Datasets and benchmarks used for evaluation, with specific metrics reported
 - key_results: Most important quantitative results with numbers
 - novelty: What makes this work novel compared to prior work
-- ad_relevance: How this work relates to autonomous driving applications
+- ad_relevance: How this work relates to {topic_name} applications
 - limitations: Key limitations or open questions (be honest but brief)
 
 Write all summary field values in {language}. Keep technical terms, model names, dataset names, and metric names in their original English form.
@@ -154,14 +154,17 @@ class Summarizer:
             )
 
         language = self.llm_cfg.language
+        topic_name = self.config.topic.name
 
         if full_text:
-            system = SYSTEM_PROMPT_FULL_TEXT.format(language=language)
+            prompt_template = self.llm_cfg.system_prompt or DEFAULT_SUMMARIZER_PROMPT_FULL_TEXT
+            system = prompt_template.replace("{language}", language).replace("{topic_name}", topic_name)
             user = USER_TEMPLATE_FULL_TEXT.format(
                 title=paper.title, full_text=full_text
             )
         else:
-            system = SYSTEM_PROMPT_ABSTRACT.format(language=language)
+            prompt_template = self.llm_cfg.system_prompt or DEFAULT_SUMMARIZER_PROMPT_ABSTRACT
+            system = prompt_template.replace("{language}", language).replace("{topic_name}", topic_name)
             user = USER_TEMPLATE_ABSTRACT.format(
                 title=paper.title, abstract=paper.abstract
             )
@@ -227,15 +230,23 @@ class Summarizer:
             data = json.loads(content)
             self.run_papers += 1
 
+            def _str(v: object) -> str:
+                """Coerce LLM output to string (handles lists/dicts)."""
+                if isinstance(v, str):
+                    return v
+                if isinstance(v, list):
+                    return "; ".join(str(x) for x in v)
+                return str(v) if v is not None else ""
+
             summary = Summary(
-                one_liner=data.get("one_liner", ""),
-                affiliations=data.get("affiliations", ""),
-                method=data.get("method", ""),
-                data_benchmarks=data.get("data_benchmarks", ""),
-                key_results=data.get("key_results", ""),
-                novelty=data.get("novelty", ""),
-                ad_relevance=data.get("ad_relevance", ""),
-                limitations=data.get("limitations", ""),
+                one_liner=_str(data.get("one_liner", "")),
+                affiliations=_str(data.get("affiliations", "")),
+                method=_str(data.get("method", "")),
+                data_benchmarks=_str(data.get("data_benchmarks", "")),
+                key_results=_str(data.get("key_results", "")),
+                novelty=_str(data.get("novelty", "")),
+                ad_relevance=_str(data.get("ad_relevance", "")),
+                limitations=_str(data.get("limitations", "")),
             )
 
             # Cache to DB
