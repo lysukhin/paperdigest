@@ -1,23 +1,22 @@
 # paperdigest
 
-Automated research paper digest system. Fetches papers from arXiv, conference proceedings (DBLP), and lab blogs (NVIDIA, Waymo), filters for relevance using an LLM, enriches with code data, scores by quality, generates full-text LLM summaries with ranking, and delivers digests as Markdown, Telegram messages, or a web dashboard.
+Automated research paper digest system. Fetches papers from arXiv, conference proceedings (DBLP), and lab blogs (NVIDIA, Waymo), scores for relevance and quality using a cheap LLM, enriches with code data, generates full-text LLM summaries with ranking, and delivers digests as Markdown, Telegram messages, or a web dashboard.
 
 Ships configured for **VLM/VLA for Autonomous Driving** but works for any research topic via `config.yaml`.
 
 ## How It Works
 
 ```
-arXiv + Blogs + DBLP → Dedup → SQLite → LLM Filter → PWC → Quality Score → [LLM Summary + Rank] → Markdown / Telegram / Web
-       (fetch)         (batch)  (store)   (filter)   (enrich)   (score)        (summarize)            (deliver)
+arXiv + Blogs + DBLP → Dedup → SQLite → LLM Score → PWC → [LLM Summary + Rank] → Markdown / Telegram / Web
+       (fetch)         (batch)  (store)   (score)   (enrich)     (summarize)            (deliver)
 ```
 
 1. **Collect** — Query arXiv by keywords/categories; optionally scrape NVIDIA/Waymo blogs and DBLP proceedings
 2. **Dedup** — Remove duplicates by arXiv ID, DOI, fuzzy title matching (85% threshold), across batch and DB
-3. **Filter** — LLM reads title + abstract against `topic.description` and decides relevance (fail-open on errors)
+3. **Score** — LLM reads title + abstract against `topic.description` and assigns a 0–1 score (relevance + quality); no rejection, all papers scored, top_n taken (fail-open with 0.5 on errors)
 4. **Enrich** — Code links from Papers with Code
-5. **Score** — Quality score from venue tier, code availability, freshness
-6. **Summarize** *(optional)* — Fetch full-text PDF, send to LLM for structured summary; LLM also ranks the top papers
-7. **Deliver** — Write Markdown digest; push compact top-5 notification to Telegram (with link to full web digest); serve via web dashboard
+5. **Summarize** *(optional)* — Fetch full-text PDF, send to LLM for structured summary; LLM also ranks the top papers
+6. **Deliver** — Write Markdown digest; push compact top-5 notification to Telegram (with link to full web digest); serve via web dashboard
 
 ## Quick Start
 
@@ -90,10 +89,9 @@ python -m paperdigest [-v] <command> [options]
 |---------|-------------|-----------|
 | `run` | Full pipeline: fetch → digest | |
 | `fetch` | Collect papers from arXiv (+ blogs/DBLP if enabled) | |
-| `filter` | Run LLM relevance filtering | |
 | `enrich` | Add PWC data | |
-| `score` | Compute quality scores | |
-| `digest` | Generate and deliver digest (filter→enrich→score→summarize→rank) | `--dry-run` |
+| `score` | Run LLM scoring on undigested papers | |
+| `digest` | Generate and deliver digest (score→enrich→summarize→rank) | `--dry-run` |
 | `init` | Create database, download PWC links | `--skip-pwc` |
 | `serve` | Start web dashboard (localhost:8000) | |
 | `stats` | Show DB and LLM usage statistics | |
@@ -104,7 +102,7 @@ python -m paperdigest [-v] <command> [options]
 
 Controlled by `config.yaml`. See **[docs/configuration.md](docs/configuration.md)** for the full reference with all YAML blocks.
 
-Key sections: topic description + keywords, collection sources, quality weights + venue tiers, LLM filter + summarizer config, delivery channels, `web.public_url` for Telegram digest links.
+Key sections: topic description + keywords, collection sources, LLM scorer + summarizer config, delivery channels, `web.public_url` for Telegram digest links.
 
 ### Environment Variables
 
@@ -119,16 +117,15 @@ Copy `.env.example` to `.env` and fill in values.
 
 ## Scoring & LLM
 
-A cheap LLM filters papers for topic relevance. Survivors get a quality score (venue, code, freshness), then a capable LLM generates full-text summaries and ranks the top papers.
+A cheap LLM (gpt-5-nano) scores each paper 0–1 on relevance and quality. Top-N papers get full-text PDF summaries from a capable LLM (gpt-5-mini), which also ranks them.
 
-See **[docs/scoring.md](docs/scoring.md)** for formulas, enrichment sources, and cost controls.
+See **[docs/scoring.md](docs/scoring.md)** for the score rubric, enrichment sources, and cost controls.
 
 ## Adapting to a Different Topic
 
 1. Change `topic.name`, `topic.description`, keywords, and benchmarks to your field
 2. Update `arxiv_categories` (see [arXiv taxonomy](https://arxiv.org/category_taxonomy))
-3. Adjust `venue_tiers` for your field's top conferences
-4. Run `python -m paperdigest init --skip-pwc && python -m paperdigest run`
+3. Run `python -m paperdigest init --skip-pwc && python -m paperdigest run`
 
 ## Testing
 
