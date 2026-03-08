@@ -56,41 +56,10 @@ collection:
       - ITSC
       # NeurIPS excluded — DBLP API returns 500 for this venue
 
-scoring:
-  quality:
-    w_venue: 0.35
-    w_code: 0.30
-    w_fresh: 0.35
-  venue_tiers:
-    tier1:
-      - "NeurIPS"
-      - "ICML"
-      - "ICLR"
-      - "CVPR"
-      - "ECCV"
-      - "ICCV"
-      - "AAAI"
-      - "IJCAI"
-      - "RSS"
-      - "CoRL"
-    tier2:
-      - "IROS"
-      - "ICRA"
-      - "WACV"
-      - "BMVC"
-      - "ACCV"
-      - "AISTATS"
-      - "UAI"
-    tier3:
-      - "IV"
-      - "ITSC"
-      - "T-ITS"
-      - "RA-L"
-      - "T-RO"
-
 digest:
   top_n: 10
   summarize_top_n: 10
+  score_threshold: 0.4
   output_dir: "data/digests"
 
 llm:
@@ -100,7 +69,25 @@ llm:
     base_url: "https://api.openai.com/v1"
     temperature:
     max_completion_tokens: 1024
-    extra_instructions:  # optional: appended to filter system prompt
+    # system_prompt overrides the default scoring prompt.
+    # Placeholders: {description} = topic.description
+    # Must return JSON: {"score": 0.7, "reason": "..."}
+    system_prompt: >
+      You are a research paper relevance and quality evaluator.
+
+      The user is interested in:
+      {description}
+
+      Given a paper's title and abstract, assign a score from 0.0 to 1.0 where:
+      - 0.0 = completely irrelevant to the topic
+      - 0.3 = tangentially related but not directly useful
+      - 0.5 = somewhat relevant, average quality
+      - 0.7 = relevant paper with solid methodology
+      - 1.0 = highly relevant, outstanding paper from respected authors/institution with strong real-world results
+
+      Consider both topical relevance AND paper quality (methodology, authors, results).
+      Respond with ONLY valid JSON: {"score": 0.7, "reason": "one sentence explaining the score"}
+    extra_instructions:  # optional: appended to system prompt
     cost_control:
       max_cost_per_run: 0.10
       max_cost_per_month: 3.00
@@ -114,6 +101,24 @@ llm:
     max_completion_tokens: 16384
     max_text_chars: 50000
     language: "English"
+    # system_prompt overrides the default summarization prompt.
+    # Placeholders: {topic_name} = topic.name, {language} = summarizer.language
+    # Must return JSON with fields: one_liner, affiliations, method, data_benchmarks,
+    #   key_results, novelty, ad_relevance, limitations
+    system_prompt: >
+      You are a research paper analyst specializing in {topic_name}.
+      Given a paper's title and full text (or abstract), produce a structured JSON summary with these fields:
+      - one_liner: A single sentence capturing the core contribution (max 150 chars)
+      - affiliations: Comma-separated list of author affiliations/institutions (e.g. "MIT, Google Research, Tsinghua University")
+      - method: Detailed description of the proposed method/approach (3-5 sentences)
+      - data_benchmarks: Datasets and benchmarks used for evaluation, with specific metrics reported
+      - key_results: Most important quantitative results with numbers
+      - novelty: What makes this work novel compared to prior work
+      - ad_relevance: How this work relates to {topic_name} applications
+      - limitations: Key limitations or open questions (be honest but brief)
+
+      Write all summary field values in {language}. Keep technical terms, model names, dataset names, and metric names in their original English form.
+      Respond with ONLY valid JSON, no markdown fences.
     extra_instructions: "Include main benchmark names and key quantitative results in one_liner. In data_benchmarks, clarify whether real-world or simulated data was used."
     cost_control:
       max_cost_per_run: 0.50
